@@ -18,8 +18,9 @@ func NewRouter(h *Handler, logger *zap.Logger) *chi.Mux {
 	r.Route("/api/v1", func(r chi.Router) {
 		r.Get("/", h.Info)
 		r.Get("/health", h.Health)
-		r.Post("/scan", h.Scan)
-		r.Post("/score", h.ScoreOnly)
+		r.Post("/scan", jwtAuthMiddleware(h.Scan))
+		r.Post("/score", jwtAuthMiddleware(h.ScoreOnly))
+		r.Post("/token", h.GenerateToken)
 	})
 
 	return r

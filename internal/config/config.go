@@ -11,6 +11,7 @@ type Config struct {
 	ScanTimeoutSeconds  int
 	WCAGLevel           string
 	MaxConcurrentScans  int
+	JWTSecret           string
 	NodeBin             string
 	AxeRunnerScript     string
 }
@@ -22,6 +23,7 @@ func Load() *Config {
 		ScanTimeoutSeconds: getEnvInt("SCAN_TIMEOUT_SECONDS", 30),
 		WCAGLevel:          getEnv("WCAG_LEVEL", "AA"),
 		MaxConcurrentScans: getEnvInt("MAX_CONCURRENT_SCANS", 5),
+		JWTSecret:          getEnv("JWT_SECRET", ""),
 		NodeBin:            getEnv("NODE_BIN", "node"),
 		AxeRunnerScript:    getEnv("AXE_RUNNER_SCRIPT", "scripts/axe_runner.js"),
 	}

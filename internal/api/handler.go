@@ -1,18 +1,21 @@
 package api
 
 import (
-	"encoding/json"
-	"fmt"
-	"net/http"
-	"net/url"
-	"strings"
-	"time"
-
-	"github.com/webaccessibility/server/internal/models"
-	"github.com/webaccessibility/server/internal/scanner"
-	"github.com/webaccessibility/server/internal/scoring"
-	"go.uber.org/zap"
+    "encoding/json"
+    "fmt"
+    "net/http"
+    "net/url"
+    "strings"
+    "time"
+    "os"
+    "github.com/golang-jwt/jwt/v4"
+    "github.com/webaccessibility/server/internal/models"
+    "github.com/webaccessibility/server/internal/scanner"
+    "github.com/webaccessibility/server/internal/scoring"
+    "go.uber.org/zap"
 )
+
+
 
 // Handler holds shared dependencies for all route handlers.
 type Handler struct {
@@ -47,6 +50,12 @@ func (h *Handler) Info(w http.ResponseWriter, r *http.Request) {
 }
 
 // Scan handles POST /api/v1/scan
+
+    // GenerateToken handles POST /api/v1/token to issue a JWT for authenticated clients.
+    // The client must provide the correct client_secret in the request body.
+    // Returns JSON {"token": "<jwt>"} on success.
+    // Errors produce standard error responses.
+
 func (h *Handler) Scan(w http.ResponseWriter, r *http.Request) {
 	var req models.ScanRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -99,6 +108,33 @@ func (h *Handler) Scan(w http.ResponseWriter, r *http.Request) {
 }
 
 // ScoreOnly handles POST /api/v1/score
+
+    // GenerateToken handles token generation (public endpoint).
+    func (h *Handler) GenerateToken(w http.ResponseWriter, r *http.Request) {
+        var req struct {
+            ClientSecret string `json:"client_secret"`
+        }
+        if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+            writeError(w, http.StatusBadRequest, "invalid request body", err.Error())
+            return
+        }
+        secret := os.Getenv("JWT_SECRET")
+        if secret == "" || req.ClientSecret != secret {
+            writeError(w, http.StatusUnauthorized, "invalid client secret", "")
+            return
+        }
+        // Create token with 30‑minute expiry.
+        token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.StandardClaims{
+            ExpiresAt: time.Now().Add(30 * time.Minute).Unix(),
+            Issuer:    "webaccessibility",
+        })
+        signed, err := token.SignedString([]byte(secret))
+        if err != nil {
+            writeError(w, http.StatusInternalServerError, "failed to sign token", err.Error())
+            return
+        }
+        writeJSON(w, http.StatusOK, map[string]string{"token": signed})
+    }
 // Runs a full scan and returns only the structured scoring report.
 func (h *Handler) ScoreOnly(w http.ResponseWriter, r *http.Request) {
 	var req models.ScanRequest
