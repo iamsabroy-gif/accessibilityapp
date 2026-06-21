@@ -88,7 +88,7 @@ func (h *Handler) Scan(w http.ResponseWriter, r *http.Request) {
 
 	h.Logger.Info("starting scan", zap.String("url", req.URL), zap.String("wcag", wcagLevel))
 
-	result, err := h.Scanner.Scan(ctx, req.URL, wcagLevel)
+	result, err := h.Scanner.Scan(ctx, req.URL, wcagLevel, req.Depth)
 	if err != nil {
 		h.Logger.Error("scan failed", zap.String("url", req.URL), zap.Error(err))
 		writeError(w, http.StatusInternalServerError, "scan failed", err.Error())
@@ -133,7 +133,7 @@ func (h *Handler) ScoreOnly(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	h.Logger.Info("starting score-only scan", zap.String("url", req.URL), zap.String("wcag", wcagLevel))
 
-	result, err := h.Scanner.Scan(ctx, req.URL, wcagLevel)
+	result, err := h.Scanner.Scan(ctx, req.URL, wcagLevel, req.Depth)
 	if err != nil {
 		h.Logger.Error("scan failed", zap.String("url", req.URL), zap.Error(err))
 		writeError(w, http.StatusInternalServerError, "scan failed", err.Error())

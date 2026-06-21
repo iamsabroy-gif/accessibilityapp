@@ -6,6 +6,7 @@ import "time"
 type ScanRequest struct {
 	URL       string `json:"url"`
 	WCAGLevel string `json:"wcag_level,omitempty"` // "AA" or "AAA"; defaults to server config
+	Depth     int    `json:"depth,omitempty"` // 0 (default) or 1, max 1
 }
 
 // Node represents a specific DOM element that triggered a violation.
@@ -44,8 +45,12 @@ type ScanResult struct {
 	DurationMs int64       `json:"duration_ms"`
 	Summary    Summary     `json:"summary"`
 	Violations []Violation `json:"violations"`
-	Passes     []string    `json:"passes,omitempty"`
-	Incomplete []string    `json:"incomplete,omitempty"`
+	Passes               []string    `json:"passes,omitempty"`
+	PassGuidelines       []string    `json:"passes_guidelines,omitempty"`
+	ViolationGuidelines  []string    `json:"violation_guidelines,omitempty"`
+	Incomplete           []string    `json:"incomplete,omitempty"`
+	IncompleteGuidelines []string    `json:"incomplete_guidelines,omitempty"`
+	EmbeddedResults      []ScanResult `json:"embedded_results,omitempty"`
 }
 
 // ErrorResponse is the standard error envelope.

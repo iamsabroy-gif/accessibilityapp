@@ -8,5 +8,5 @@ import (
 
 // Scanner defines the interface for any accessibility scanning backend.
 type Scanner interface {
-	Scan(ctx context.Context, url string, wcagLevel string) (*models.ScanResult, error)
+	Scan(ctx context.Context, url string, wcagLevel string, depth int) (*models.ScanResult, error)
 }
