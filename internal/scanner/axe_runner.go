@@ -191,7 +191,8 @@ func mapToScanResult(raw axeRawResult, url, wcagLevel string, durationMs int64) 
 	violationGuidelines := mapGuidelines(violationIDs)
 	incompleteGuidelines := mapGuidelines(incompleteIDs)
 
-	return &models.ScanResult{
+	// Create the ScanResult struct (base fields)
+	result := &models.ScanResult{
 		URL:        url,
 		ScannedAt:  time.Now().UTC(),
 		DurationMs: durationMs,
@@ -206,10 +207,13 @@ func mapToScanResult(raw axeRawResult, url, wcagLevel string, durationMs int64) 
 		},
 		Violations: violations,
 		Passes:     passIDs,
-		PassGuidelines:       passGuidelines,
-		ViolationGuidelines:  violationGuidelines,
 		Incomplete: incompleteIDs,
-		IncompleteGuidelines: incompleteGuidelines,
-		EmbeddedResults:      nil,
+		EmbeddedResults: nil,
 	}
+
+	// Populate guideline slices into the result struct
+	result.PassGuidelines = passGuidelines
+	result.ViolationGuidelines = violationGuidelines
+	result.IncompleteGuidelines = incompleteGuidelines
+	return result
 }

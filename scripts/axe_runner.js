@@ -179,6 +179,32 @@ const tags = tagMap[wcagLevel.toUpperCase()] || tagMap['AA'];
       return { violations, passes, incomplete };
     });
 
+    // Extract links for embedded scanning (depth=1)
+    const extractedLinks = await page.evaluate(() => {
+      const anchors = Array.from(document.querySelectorAll('a[href]'));
+      const links = [];
+      for (const a of anchors) {
+        const href = a.getAttribute('href');
+        if (!href) continue;
+        // Filter out mailto:, tel:, javascript:, and fragment-only links
+        const lower = href.toLowerCase();
+        if (lower.startsWith('mailto:') || lower.startsWith('tel:') || lower.startsWith('javascript:')) continue;
+        if (lower.startsWith('#')) continue;
+        try {
+          const url = new URL(href, location.href);
+          if (url.protocol !== 'http:' && url.protocol !== 'https:') continue;
+          // Exclude private/internal hosts
+          const host = url.hostname;
+          const blocked = ['localhost', '127.', '10.', '192.168.', '172.16.', '0.0.0.0', '::1'];
+          if (blocked.some(b => host.startsWith(b))) continue;
+          links.push(url.href);
+        } catch (e) {
+          // Ignore invalid URLs
+        }
+      }
+      return links;
+    });
+
     // Merge custom results with axe results
     const merged = {
       url: results.url,
@@ -193,7 +219,10 @@ const tags = tagMap[wcagLevel.toUpperCase()] || tagMap['AA'];
       })).concat(custom.violations),
       passes: results.passes.map(p => ({ id: p.id, description: p.description })).concat(custom.passes),
       incomplete: results.incomplete.map(i => ({ id: i.id, description: i.description })).concat(custom.incomplete),
+      links: extractedLinks,
     };
+
+
 
     console.log(JSON.stringify(merged));
   } catch (err) {
