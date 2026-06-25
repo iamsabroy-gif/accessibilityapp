@@ -17,6 +17,9 @@ FROM node:22-slim
 
 # Chromium system dependencies required by Puppeteer's bundled browser
 RUN apt-get update && apt-get install -y --no-install-recommends \
+      chromium \
+      libgbm1 \
+      libxkbcommon0 \
       ca-certificates \
       fonts-liberation \
       libasound2 \
@@ -49,7 +52,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 
-# Install Node deps (Puppeteer downloads its own Chromium at this step)
+# Configure Puppeteer to skip downloading Chromium and use the system-installed version instead
+ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true \
+    PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
+
+# Install Node deps (skips Puppeteer Chrome download via env var)
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev
 
