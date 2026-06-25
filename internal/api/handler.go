@@ -65,7 +65,7 @@ func (h *Handler) Scan(w http.ResponseWriter, r *http.Request) {
         wcagLevel = req.WCAGLevel
     }
     r.Header.Set("X-Scan-URL", req.URL)
-    if isPrivateURL(req.URL) {
+    if isPrivateURL(req.URL) && !config.GetAllowPrivateScans() {
         writeError(w, http.StatusForbidden, "scanning private/internal addresses is not allowed", "")
         return
     }
@@ -169,7 +169,7 @@ func (h *Handler) ScoreOnly(w http.ResponseWriter, r *http.Request) {
         writeError(w, http.StatusBadRequest, "invalid url", err.Error())
         return
     }
-    if isPrivateURL(req.URL) {
+    if isPrivateURL(req.URL) && !config.GetAllowPrivateScans() {
         writeError(w, http.StatusForbidden, "scanning private/internal addresses is not allowed", "")
         return
     }

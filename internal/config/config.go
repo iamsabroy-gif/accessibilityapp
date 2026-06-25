@@ -17,6 +17,7 @@ type Config struct {
     JWTSecret          string
     NodeBin            string
     AxeRunnerScript    string
+    AllowPrivateScans  bool
 }
 
 // global holds the runtime configuration and is accessed concurrently.
@@ -40,6 +41,16 @@ func GetSecret() string {
         return ""
     }
     return global.JWTSecret
+}
+
+// GetAllowPrivateScans returns whether private IP/localhost scans are allowed.
+func GetAllowPrivateScans() bool {
+    mu.RLock()
+    defer mu.RUnlock()
+    if global == nil {
+        return false
+    }
+    return global.AllowPrivateScans
 }
 
 // SetSecret updates the JWT secret at runtime.
@@ -78,6 +89,7 @@ func Load() *Config {
         JWTSecret:          secret,
         NodeBin:            getEnv("NODE_BIN", "node"),
         AxeRunnerScript:    getEnv("AXE_RUNNER_SCRIPT", "scripts/axe_runner.js"),
+        AllowPrivateScans:  getEnvBool("ALLOW_PRIVATE_SCANS", false),
     }
 }
 
@@ -92,6 +104,15 @@ func getEnvInt(key string, fallback int) int {
     if v := os.Getenv(key); v != "" {
         if n, err := strconv.Atoi(v); err == nil {
             return n
+        }
+    }
+    return fallback
+}
+
+func getEnvBool(key string, fallback bool) bool {
+    if v := os.Getenv(key); v != "" {
+        if b, err := strconv.ParseBool(v); err == nil {
+            return b
         }
     }
     return fallback

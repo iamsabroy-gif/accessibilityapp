@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"time"
 
+	"github.com/webaccessibility/server/internal/config"
 	"github.com/webaccessibility/server/internal/models"
 	"github.com/webaccessibility/server/internal/scoring"
 
@@ -121,7 +122,7 @@ func (a *AxeRunner) Scan(ctx context.Context, url string, wcagLevel string, dept
                     break
                 }
             }
-            if blockedFlag {
+            if blockedFlag && !config.GetAllowPrivateScans() {
                 continue
             }
             // Perform recursive scan with depth 0
