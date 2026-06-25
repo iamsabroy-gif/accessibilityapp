@@ -181,7 +181,7 @@ func mapToScanResult(raw axeRawResult, url, wcagLevel string, durationMs int64) 
 			}
 			nodes = append(nodes, node)
 		}
-		violations = append(violations, models.Violation{
+		violation := models.Violation{
 			ID:             v.ID,
 			Impact:         v.Impact,
 			Description:    v.Description,
@@ -190,7 +190,12 @@ func mapToScanResult(raw axeRawResult, url, wcagLevel string, durationMs int64) 
 			Tags:           v.Tags,
 			Nodes:          nodes,
 			ViolationIndex: v.ViolationIndex,
-		})
+		}
+		// Attach developer fix suggestion if one exists for this rule
+		if suggestion, ok := models.SuggestionMap[v.ID]; ok {
+			violation.DevSuggestion = suggestion
+		}
+		violations = append(violations, violation)
 	}
 
 	passIDs := make([]string, 0, len(raw.Passes))

@@ -26,16 +26,26 @@ type Node struct {
 	BBox           *BBox    `json:"bbox,omitempty"` // pixel coords on full-page screenshot
 }
 
+// DevSuggestion holds developer-facing remediation guidance for a violation.
+type DevSuggestion struct {
+	Title      string   `json:"title"`
+	FixSteps   []string `json:"fix_steps"`
+	CodeBefore string   `json:"code_before,omitempty"`
+	CodeAfter  string   `json:"code_after,omitempty"`
+	Language   string   `json:"language,omitempty"` // "html" | "css" | "js"
+}
+
 // Violation represents a single WCAG accessibility violation.
 type Violation struct {
-	ID             string   `json:"id"`
-	Impact         string   `json:"impact"` // "critical" | "serious" | "moderate" | "minor"
-	Description    string   `json:"description"`
-	Help           string   `json:"help"`
-	HelpURL        string   `json:"help_url"`
-	Tags           []string `json:"tags"`
-	Nodes          []Node   `json:"nodes"`
-	ViolationIndex int      `json:"violationIndex,omitempty"` // 1-based index for overlay markers
+	ID             string         `json:"id"`
+	Impact         string         `json:"impact"` // "critical" | "serious" | "moderate" | "minor"
+	Description    string         `json:"description"`
+	Help           string         `json:"help"`
+	HelpURL        string         `json:"help_url"`
+	Tags           []string       `json:"tags"`
+	Nodes          []Node         `json:"nodes"`
+	ViolationIndex int            `json:"violationIndex,omitempty"` // 1-based index for overlay markers
+	DevSuggestion  *DevSuggestion `json:"dev_suggestion,omitempty"` // developer fix guidance
 }
 
 // Summary holds aggregated counts and the accessibility score for the scan.

@@ -125,6 +125,70 @@ const htmlTemplate = `<!DOCTYPE html>
   .passes-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: .5rem; }
   .pass-item { background: #0f2318; border: 1px solid #1a4731; color: #48bb78; border-radius: 6px; padding: .4rem .75rem; font-size: .78rem; font-family: monospace; }
 
+  /* ── Dev Suggestion panel ── */
+  .suggestion {
+    margin-top: .9rem;
+    border: 1px solid #2d3748;
+    border-radius: 8px;
+    background: #0d111c;
+    overflow: hidden;
+  }
+  .suggestion summary {
+    padding: .55rem 1rem;
+    font-size: .8rem;
+    font-weight: 600;
+    color: #a78bfa;
+    cursor: pointer;
+    user-select: none;
+    list-style: none;
+    display: flex;
+    align-items: center;
+    gap: .4rem;
+  }
+  .suggestion summary::-webkit-details-marker { display: none; }
+  .suggestion summary::before { content: '▶'; font-size: .6rem; transition: transform .2s; }
+  .suggestion[open] summary::before { transform: rotate(90deg); }
+  .suggestion summary:hover { background: #151c2e; }
+  .fix-steps {
+    margin: 0 1rem .75rem 2rem;
+    padding: 0;
+    font-size: .78rem;
+    color: #cbd5e0;
+    line-height: 1.6;
+  }
+  .fix-steps li { margin-bottom: .25rem; }
+  .code-pair {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: .5rem;
+    padding: 0 1rem .75rem;
+  }
+  @media (max-width: 680px) { .code-pair { grid-template-columns: 1fr; } }
+  .code-block {
+    border-radius: 6px;
+    overflow: hidden;
+    border: 1px solid #2d3748;
+  }
+  .code-label {
+    font-size: .7rem;
+    font-weight: 700;
+    padding: .25rem .6rem;
+    letter-spacing: .04em;
+  }
+  .code-block.bad  .code-label { background: #3b1212; color: #fc8181; }
+  .code-block.good .code-label { background: #0e3320; color: #6ee7b7; }
+  .code-block pre {
+    margin: 0;
+    padding: .6rem .8rem;
+    font-family: 'JetBrains Mono', 'Fira Code', monospace;
+    font-size: .72rem;
+    line-height: 1.55;
+    color: #9ca3af;
+    white-space: pre-wrap;
+    word-break: break-all;
+    background: #0f1117;
+  }
+
   /* ── Footer ── */
   .footer { text-align: center; padding: 2rem; font-size: .75rem; color: #4a5568; border-top: 1px solid #1a1f2e; }
 
@@ -213,6 +277,26 @@ const htmlTemplate = `<!DOCTYPE html>
     <div class="v-help"><a href="{{.HelpURL}}" target="_blank" rel="noopener">{{.Help}} ↗</a></div>
     {{if .Nodes}}
     <div class="nodes">{{range .Nodes}}<div class="node">{{.HTML}}</div>{{end}}</div>
+    {{end}}
+    {{if .DevSuggestion}}
+    <details class="suggestion">
+      <summary>🛠 Dev Fix: {{.DevSuggestion.Title}}</summary>
+      <ol class="fix-steps">
+        {{range .DevSuggestion.FixSteps}}<li>{{.}}</li>{{end}}
+      </ol>
+      {{if .DevSuggestion.CodeBefore}}
+      <div class="code-pair">
+        <div class="code-block bad">
+          <div class="code-label">❌ Before (broken)</div>
+          <pre><code>{{.DevSuggestion.CodeBefore}}</code></pre>
+        </div>
+        <div class="code-block good">
+          <div class="code-label">✅ After (fixed)</div>
+          <pre><code>{{.DevSuggestion.CodeAfter}}</code></pre>
+        </div>
+      </div>
+      {{end}}
+    </details>
     {{end}}
   </div>
   {{end}}
