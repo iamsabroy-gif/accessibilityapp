@@ -53,8 +53,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 WORKDIR /app
 
 # Configure Puppeteer to skip downloading Chromium and use the system-installed version instead
+# Also redirect HOME and XDG caches to /tmp so the non-root appuser has write permissions to run Chromium
 ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true \
-    PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
+    PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium \
+    HOME=/tmp \
+    XDG_CONFIG_HOME=/tmp/.chromium \
+    XDG_CACHE_HOME=/tmp/.chromium
 
 # Install Node deps (skips Puppeteer Chrome download via env var)
 COPY package.json package-lock.json ./
