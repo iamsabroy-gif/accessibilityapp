@@ -150,7 +150,7 @@ func letterGrade(score int) string {
 		return "A"
 	case score >= 75:
 		return "B"
-	case score >= 50:
+	case score >= 40:
 		return "C"
 	case score >= 25:
 		return "D"

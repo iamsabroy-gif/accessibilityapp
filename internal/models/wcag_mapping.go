@@ -11,7 +11,9 @@ var WCAGMap = map[string][]string{
     "meaningful-sequence-css-order":     {"1.3.2"},
     "meaningful-sequence-absolute":      {"1.3.2"},
     "meaningful-sequence-grid":          {"1.3.2"},
-    "video-captions-present": {"1.2.2"},
+    "video-captions-present":      {"1.2.2"},
+    "video-captions-track-src":    {"1.2.2"},  // H95: missing src on <track kind="captions">
+    "video-captions-track-lang":   {"1.2.2"},  // H95: missing srclang/label on <track kind="captions">
     // Core AXE rules (partial list – extend as needed)
     "accesskeys":                {"2.4.1"},
     "aria-allowed-attr":         {"4.1.2"},
@@ -57,6 +59,25 @@ var WCAGMap = map[string][]string{
     "region":                    {"1.3.1"},
     "select-name":               {"1.3.1"},
     "valid-lang":                {"3.1.1"},
-    // Custom checks added in scripts/axe_runner.js
+    // Existing custom checks (previously unregistered)
+    "color-only-indicator":              {"1.4.1"},
+    "focus-order-cycling":               {"2.1.2", "2.4.3"},
+    "meaningful-sequence-letter-spacing": {"1.3.2"},
 
+    // Phase 1 – DOM-only new checks
+    "non-text-contrast":     {"1.4.11"}, // UI component border contrast 3:1
+    "error-identification":  {"3.3.1"},  // aria-invalid + accessible error message
+
+    // Phase 2 – Puppeteer keyboard/viewport checks
+    "focus-visible":           {"2.4.7"}, // visible focus indicator
+    "resize-text":             {"1.4.4"}, // 200% text resize without overflow
+    "on-focus-context-change": {"3.2.1"}, // no nav/dialog on focus alone
+
+    // Phase 3 – Heuristic / partial checks (reported as incomplete)
+    "orientation-lock":          {"1.3.4"}, // CSS orientation lock or screen.orientation.lock()
+    "multiple-ways":             {"2.4.5"}, // search input / sitemap link
+    "content-on-hover":          {"1.4.13"}, // tooltip dismissibility
+    "sensory-characteristics":   {"1.3.3"}, // text heuristic – shape/colour/location cues
+    "pointer-gestures":          {"2.5.1"}, // multi-touch without single-pointer fallback
+    "timing-adjustable":         {"2.2.1"}, // meta refresh + short timers
 }

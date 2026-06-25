@@ -15,8 +15,22 @@
  * **Custom WCAG 2.1 Checks Added**
  *   • G58 – Link to text alternative adjacent to media (audio/video/object/iframe)
  *   • H53 – Object body provides alternative for time‑based media
- *   These checks run after axe.run() using native DOM APIs and are merged
- *   into the standard `violations`, `passes`, and `incomplete` arrays.
+ *   • 1.2.2 – video-captions-present (existing)
+ *   • 1.2.2 – video-captions-track-attrs: <track> srclang + label validation (H95)
+ *   • 1.3.3 – sensory-characteristics: text heuristic (incomplete)
+ *   • 1.3.4 – orientation-lock: CSS orientation media query + JS API
+ *   • 1.4.1 – color-only-indicator (existing)
+ *   • 1.4.4 – resize-text: 200% font-size overflow check (restores original)
+ *   • 1.4.11 – non-text-contrast: UI component border contrast 3:1
+ *   • 1.4.13 – content-on-hover: tooltip dismissibility check
+ *   • 2.1.2 – focus-order-cycling (existing)
+ *   • 2.2.1 – timing-adjustable: meta refresh + setTimeout/setInterval detection
+ *   • 2.4.3 – meaningful-sequence-* (existing)
+ *   • 2.4.5 – multiple-ways: search input / sitemap link heuristic
+ *   • 2.4.7 – focus-visible: compare computed style before/after focus
+ *   • 2.5.1 – pointer-gestures: multi-touch event listener analysis (incomplete)
+ *   • 3.2.1 – on-focus-context-change: detect nav/dialog on focus
+ *   • 3.3.1 – error-identification: aria-invalid + accessible error message
  */
 
 const puppeteer = require('puppeteer');
@@ -196,6 +210,7 @@ const tags = tagMap[wcagLevel.toUpperCase()] || tagMap['AA'];
 
     // Return results of custom G58/H53 block
     const customResult = custom;
+
 // ---------- Video Captions Check (WCAG 1.2.2) ----------
 const videoCheck = await page.evaluate(() => {
   const violations = [];
@@ -224,7 +239,61 @@ const videoCheck = await page.evaluate(() => {
   return { violations, passes };
 });
 
-    // ---------- Color‑Only State Indicator Check (WCAG 1.4.1) ----------
+// ---------- Video Track Attribute Check (WCAG 1.2.2 – H95) ----------
+// Extends the captions check: validates src, srclang and label on <track kind="captions">
+// Emits two distinct rule IDs to match the Go WCAGMap and test expectations:
+//   video-captions-track-src  – <track> has no src attribute
+//   video-captions-track-lang – <track> is missing srclang and/or label
+const videoTrackCheck = await page.evaluate(() => {
+  const violations = [];
+  const passes = [];
+  document.querySelectorAll('video').forEach(video => {
+    const captionTracks = Array.from(video.querySelectorAll('track')).filter(t =>
+      (t.getAttribute('kind') || '').toLowerCase() === 'captions'
+    );
+    captionTracks.forEach(track => {
+      const src     = (track.getAttribute('src') || '').trim();
+      const srclang = (track.getAttribute('srclang') || '').trim();
+      const label   = (track.getAttribute('label') || '').trim();
+
+      // Rule 1 – missing src
+      if (!src) {
+        violations.push({
+          id: 'video-captions-track-src',
+          impact: 'serious',
+          description: '<track kind="captions"> has no src attribute pointing to a caption file.',
+          help: 'Provide a valid src URL on the caption track element.',
+          helpUrl: 'https://www.w3.org/WAI/WCAG21/Techniques/html/H95',
+          tags: ['wcag122'],
+          nodes: [{ html: track.outerHTML, target: ['track'], failureSummary: '' }]
+        });
+      } else {
+        passes.push({ id: 'video-captions-track-src', description: 'Caption track has a src attribute.' });
+      }
+
+      // Rule 2 – missing srclang and/or label
+      if (!srclang || !label) {
+        const missing = [];
+        if (!srclang) missing.push('srclang');
+        if (!label)   missing.push('label');
+        violations.push({
+          id: 'video-captions-track-lang',
+          impact: 'moderate',
+          description: `<track kind="captions"> is missing required attribute(s): ${missing.join(', ')}.`,
+          help: 'Provide srclang (BCP 47 language code) and label (human-readable name) on caption tracks.',
+          helpUrl: 'https://www.w3.org/WAI/WCAG21/Techniques/html/H95',
+          tags: ['wcag122'],
+          nodes: [{ html: track.outerHTML, target: ['track'], failureSummary: '' }]
+        });
+      } else {
+        passes.push({ id: 'video-captions-track-lang', description: 'Caption track has valid srclang and label.' });
+      }
+    });
+  });
+  return { violations, passes };
+});
+
+    // ---------- Color‑Only State Indicator Check (WCAG 1.4.1) ----------
 const colorCheck = await page.evaluate(() => {
   const violations = [];
   const passes = [];
@@ -271,7 +340,123 @@ const colorCheck = await page.evaluate(() => {
   });
   return { violations, passes };
 });
-// ---------- Focus Order Check (WCAG 2.1.2) ----------
+
+// ---------- Non-text Contrast Check (WCAG 1.4.11) ----------
+const nonTextContrastCheck = await page.evaluate(() => {
+  const violations = [];
+  const passes = [];
+
+  function getLuminance(r, g, b) {
+    return [r, g, b].reduce((sum, c, i) => {
+      const s = c / 255;
+      const lin = s <= 0.03928 ? s / 12.92 : Math.pow((s + 0.055) / 1.055, 2.4);
+      return sum + lin * [0.2126, 0.7152, 0.0722][i];
+    }, 0);
+  }
+
+  function parseRGB(cssColor) {
+    const m = cssColor.match(/rgba?\(\s*(\d+),\s*(\d+),\s*(\d+)/);
+    return m ? [parseInt(m[1]), parseInt(m[2]), parseInt(m[3])] : null;
+  }
+
+  function contrastRatio(c1, c2) {
+    const l1 = getLuminance(...c1);
+    const l2 = getLuminance(...c2);
+    const lighter = Math.max(l1, l2);
+    const darker  = Math.min(l1, l2);
+    return (lighter + 0.05) / (darker + 0.05);
+  }
+
+  const uiSelectors = 'input, textarea, select, button, [role="checkbox"], [role="radio"], [role="slider"], [role="switch"], [role="spinbutton"]';
+  document.querySelectorAll(uiSelectors).forEach(el => {
+    const style = window.getComputedStyle(el);
+    const bgColor = style.backgroundColor;
+    // Prefer borderColor; fall back to outlineColor
+    const boundaryColor = style.borderColor || style.outlineColor;
+    const bgRGB = parseRGB(bgColor);
+    const boundaryRGB = parseRGB(boundaryColor);
+    if (!bgRGB || !boundaryRGB) return;
+    // Skip fully transparent backgrounds
+    if (bgColor.startsWith('rgba') && parseFloat(bgColor.split(',')[3]) === 0) return;
+    const ratio = contrastRatio(bgRGB, boundaryRGB);
+    if (ratio < 3) {
+      violations.push({
+        id: 'non-text-contrast',
+        impact: 'serious',
+        description: `UI component border has insufficient contrast ratio of ${ratio.toFixed(2)}:1 against background (minimum 3:1 required).`,
+        help: 'Ensure UI component boundaries (borders, outlines) have at least 3:1 contrast ratio against adjacent colours.',
+        helpUrl: 'https://www.w3.org/WAI/WCAG21/Understanding/non-text-contrast.html',
+        tags: ['wcag21aa', 'wcag1411'],
+        nodes: [{ html: el.outerHTML, target: [el.tagName.toLowerCase()], failureSummary: '' }]
+      });
+    } else {
+      passes.push({ id: 'non-text-contrast', description: 'UI component has sufficient border contrast.' });
+    }
+  });
+  return { violations, passes };
+});
+
+// ---------- Error Identification Check (WCAG 3.3.1) ----------
+const errorIdentificationCheck = await page.evaluate(() => {
+  const violations = [];
+  const passes = [];
+  const incomplete = [];
+
+  // Check aria-invalid="true" elements
+  document.querySelectorAll('[aria-invalid="true"]').forEach(el => {
+    const describedBy = el.getAttribute('aria-describedby') || '';
+    let hasAccessibleError = false;
+
+    if (describedBy) {
+      hasAccessibleError = describedBy.split(/\s+/).some(id => {
+        const ref = document.getElementById(id);
+        return ref && ref.textContent.trim().length > 0;
+      });
+    }
+
+    if (!hasAccessibleError) {
+      // Look for adjacent role=alert or aria-live element in same parent
+      const parent = el.parentElement;
+      if (parent) {
+        const alertEl = parent.querySelector('[role="alert"], [aria-live="polite"], [aria-live="assertive"]');
+        if (alertEl && alertEl.textContent.trim().length > 0) {
+          hasAccessibleError = true;
+        }
+      }
+    }
+
+    if (hasAccessibleError) {
+      passes.push({ id: 'error-identification', description: 'Error field has an accessible, associated error message.' });
+    } else {
+      violations.push({
+        id: 'error-identification',
+        impact: 'serious',
+        description: 'Input marked aria-invalid="true" lacks an accessible error message via aria-describedby or role="alert".',
+        help: 'Associate a descriptive error message using aria-describedby referencing a visible error element, or place a role="alert" adjacent to the field.',
+        helpUrl: 'https://www.w3.org/WAI/WCAG21/Understanding/error-identification.html',
+        tags: ['wcag2a', 'wcag331'],
+        nodes: [{ html: el.outerHTML, target: [el.tagName.toLowerCase()], failureSummary: '' }]
+      });
+    }
+  });
+
+  // Native HTML5 required fields without an associated error container → flag incomplete
+  document.querySelectorAll('input[required], select[required], textarea[required]').forEach(el => {
+    if (el.getAttribute('aria-invalid') === 'true') return; // already handled above
+    if (!el.getAttribute('aria-describedby') && !el.getAttribute('aria-errormessage')) {
+      incomplete.push({
+        id: 'error-identification',
+        description: 'Required field has no aria-describedby or aria-errormessage. Verify that HTML5 validation errors are programmatically accessible.',
+        help: 'Associate error messages with form fields using aria-describedby.',
+        helpUrl: 'https://www.w3.org/WAI/WCAG21/Understanding/error-identification.html'
+      });
+    }
+  });
+
+  return { violations, passes, incomplete };
+});
+
+// ---------- Focus Order Check (WCAG 2.1.2) ----------
 const focusCheck = await (async () => {
   const maxPresses = 50;
   const visited = new Set();
@@ -322,7 +507,7 @@ const focusCheck = await (async () => {
   };
 })();
 
-// ---------- Modal Escape Check (WCAG 2.1.2) ----------
+// ---------- Modal Escape Check (WCAG 2.1.2) ----------
 const modalCheck = await page.evaluate(() => {
   const violations = [];
   const passes = [];
@@ -355,7 +540,7 @@ const modalCheck = await page.evaluate(() => {
   return { violations, passes };
 });
 
-// ---------- Phase 1 – C27: Meaningful Sequence Checks ----------
+// ---------- Phase 1 – C27: Meaningful Sequence Checks ----------
     const c27 = await page.evaluate(() => {
       const violations = [];
       const passes = [];
@@ -426,7 +611,7 @@ const modalCheck = await page.evaluate(() => {
       return { violations, passes, incomplete };
     });
 
-    // ---------- Phase 2 – C8: Letter‑spacing Check ----------
+    // ---------- Phase 2 – C8: Letter‑spacing Check ----------
     const c8 = await page.evaluate(() => {
       const violations = [];
       const passes = [];
@@ -461,11 +646,503 @@ const modalCheck = await page.evaluate(() => {
       return { violations, passes, incomplete };
     });
 
-    // Merge all custom results
+// =====================================================================
+// PHASE 1 – New DOM-only checks
+// =====================================================================
+
+// ---------- Focus Visible Check (WCAG 2.4.7) ----------
+const focusVisibleCheck = await (async () => {
+  const violations = [];
+  const passes = [];
+  const focusableSelector = 'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex="0"]';
+
+  // Stamp data attributes to uniquely identify elements
+  await page.evaluate((sel) => {
+    document.querySelectorAll(sel).forEach((el, i) => {
+      if (i < 30) el.setAttribute('data-fv-idx', i);
+    });
+  }, focusableSelector);
+
+  const count = await page.$$eval('[data-fv-idx]', els => els.length);
+
+  for (let i = 0; i < count; i++) {
+    const sel = `[data-fv-idx="${i}"]`;
+    try {
+      // Capture unfocused computed styles
+      const unfocused = await page.$eval(sel, el => {
+        const s = window.getComputedStyle(el);
+        return { outline: s.outline, boxShadow: s.boxShadow, border: s.border, html: el.outerHTML, tag: el.tagName.toLowerCase() };
+      });
+
+      await page.focus(sel);
+
+      // Capture focused computed styles
+      const focused = await page.$eval(sel, el => {
+        const s = window.getComputedStyle(el);
+        return { outline: s.outline, boxShadow: s.boxShadow, border: s.border };
+      });
+
+      const outlineChanged   = focused.outline    !== unfocused.outline    && focused.outline    !== 'none' && !/\b0px\b/.test(focused.outline);
+      const shadowChanged    = focused.boxShadow  !== unfocused.boxShadow  && focused.boxShadow  !== 'none';
+      const borderChanged    = focused.border     !== unfocused.border;
+      const hasVisibleIndicator = outlineChanged || shadowChanged || borderChanged;
+
+      if (hasVisibleIndicator) {
+        passes.push({ id: 'focus-visible', description: 'Element has a visible focus indicator.' });
+      } else {
+        violations.push({
+          id: 'focus-visible',
+          impact: 'serious',
+          description: 'Element shows no visible focus indicator (outline, box-shadow, or border unchanged on :focus).',
+          help: 'Add a visible :focus style using outline, box-shadow, or border.',
+          helpUrl: 'https://www.w3.org/WAI/WCAG21/Understanding/focus-visible.html',
+          tags: ['wcag21aa', 'wcag247'],
+          nodes: [{ html: unfocused.html, target: [unfocused.tag], failureSummary: '' }]
+        });
+      }
+    } catch (_) { /* element hidden or stale – skip */ }
+  }
+
+  // Clean up stamped attributes
+  await page.evaluate(() => {
+    document.querySelectorAll('[data-fv-idx]').forEach(el => el.removeAttribute('data-fv-idx'));
+  });
+
+  return { violations, passes };
+})();
+
+// ---------- Resize Text Check (WCAG 1.4.4) – restores original font-size ----------
+const resizeTextCheck = await (async () => {
+  const violations = [];
+  const passes = [];
+
+  // Capture original font-size before modification
+  const originalFontSize = await page.evaluate(() => document.documentElement.style.fontSize || '');
+
+  try {
+    await page.evaluate(() => { document.documentElement.style.fontSize = '200%'; });
+
+    const overflow = await page.evaluate(() => ({
+      hasHorizontalScroll: document.documentElement.scrollWidth > window.innerWidth,
+      hasClippedText: Array.from(document.querySelectorAll('*')).some(el => {
+        const s = window.getComputedStyle(el);
+        return (s.overflow === 'hidden' || s.overflowX === 'hidden') && el.scrollWidth > el.clientWidth;
+      })
+    }));
+
+    if (overflow.hasHorizontalScroll || overflow.hasClippedText) {
+      violations.push({
+        id: 'resize-text',
+        impact: 'serious',
+        description: 'Text resized to 200% causes horizontal scrolling or content clipping, indicating loss of content or functionality.',
+        help: 'Ensure page content is fully readable when text is resized to 200% without horizontal scrollbars or clipping.',
+        helpUrl: 'https://www.w3.org/WAI/WCAG21/Understanding/resize-text.html',
+        tags: ['wcag21aa', 'wcag144'],
+        nodes: []
+      });
+    } else {
+      passes.push({ id: 'resize-text', description: 'Content remains accessible when text is resized to 200%.' });
+    }
+  } finally {
+    // Always restore the original font-size to avoid side-effects on subsequent checks
+    await page.evaluate((orig) => { document.documentElement.style.fontSize = orig; }, originalFontSize);
+  }
+
+  return { violations, passes };
+})();
+
+// ---------- On-Focus Context Change Check (WCAG 3.2.1) ----------
+const onFocusContextChangeCheck = await (async () => {
+  const violations = [];
+  const passes = [];
+  const initialUrl = page.url();
+  const focusableSelector = 'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex="0"]';
+
+  // Stamp elements (limit to 20 to keep runtime reasonable)
+  await page.evaluate((sel) => {
+    document.querySelectorAll(sel).forEach((el, i) => { if (i < 20) el.setAttribute('data-oc-idx', i); });
+  }, focusableSelector);
+
+  const count = await page.$$eval('[data-oc-idx]', els => els.length);
+
+  for (let i = 0; i < count; i++) {
+    const sel = `[data-oc-idx="${i}"]`;
+    try {
+      const elInfo = await page.$eval(sel, el => ({ html: el.outerHTML, tag: el.tagName.toLowerCase() }));
+      const dialogsBefore = await page.$$eval('[role="dialog"], dialog[open]', els => els.length);
+
+      await page.focus(sel);
+      await new Promise(r => setTimeout(r, 200));
+
+      const currentUrl = page.url();
+      const dialogsAfter = await page.$$eval('[role="dialog"], dialog[open]', els => els.length);
+
+      if (currentUrl !== initialUrl) {
+        violations.push({
+          id: 'on-focus-context-change',
+          impact: 'serious',
+          description: 'Focusing this element triggered a page navigation (URL changed).',
+          help: 'Do not cause context changes (navigation, dialogs) solely from focus events.',
+          helpUrl: 'https://www.w3.org/WAI/WCAG21/Understanding/on-focus.html',
+          tags: ['wcag2a', 'wcag321'],
+          nodes: [{ html: elInfo.html, target: [elInfo.tag], failureSummary: '' }]
+        });
+        // Navigate back before continuing
+        await page.goto(initialUrl, { waitUntil: 'domcontentloaded', timeout: 30000 }).catch(() => {});
+        break;
+      } else if (dialogsAfter > dialogsBefore) {
+        violations.push({
+          id: 'on-focus-context-change',
+          impact: 'serious',
+          description: 'Focusing this element opened a dialog, causing an unexpected context change on focus.',
+          help: 'Do not open dialogs or menus solely as a result of receiving focus.',
+          helpUrl: 'https://www.w3.org/WAI/WCAG21/Understanding/on-focus.html',
+          tags: ['wcag2a', 'wcag321'],
+          nodes: [{ html: elInfo.html, target: [elInfo.tag], failureSummary: '' }]
+        });
+      } else {
+        passes.push({ id: 'on-focus-context-change', description: 'Focusing element causes no context change.' });
+      }
+    } catch (_) { /* hidden / removed element – skip */ }
+  }
+
+  // Clean up
+  await page.evaluate(() => {
+    document.querySelectorAll('[data-oc-idx]').forEach(el => el.removeAttribute('data-oc-idx'));
+  });
+
+  return { violations, passes };
+})();
+
+// =====================================================================
+// PHASE 2 – Heuristic / Partial checks (reported as `incomplete`)
+// =====================================================================
+
+// ---------- Orientation Lock Check (WCAG 1.3.4) ----------
+const orientationLockCheck = await page.evaluate(() => {
+  const violations = [];
+  const passes = [];
+  const incomplete = [];
+  let foundLock = false;
+
+  // Scan stylesheets for orientation media queries that hide content
+  for (const sheet of document.styleSheets) {
+    try {
+      for (const rule of sheet.cssRules) {
+        if (rule.type !== CSSRule.MEDIA_RULE) continue;
+        const media = (rule.conditionText || (rule.media && rule.media.mediaText) || '');
+        if (!/orientation\s*:\s*(landscape|portrait)/i.test(media)) continue;
+        for (const nested of rule.cssRules) {
+          const style = nested.style || {};
+          if (style.display === 'none' || style.visibility === 'hidden') {
+            foundLock = true;
+            violations.push({
+              id: 'orientation-lock',
+              impact: 'serious',
+              description: `CSS hides content in "@media (${media})" query, potentially restricting display to one orientation.`,
+              help: 'Do not restrict content to a single orientation unless absolutely essential (e.g., piano app).',
+              helpUrl: 'https://www.w3.org/WAI/WCAG21/Understanding/orientation.html',
+              tags: ['wcag21aa', 'wcag134'],
+              nodes: []
+            });
+            break;
+          }
+        }
+      }
+    } catch (_) { /* cross-origin stylesheet */ }
+  }
+
+  // Check inline scripts for screen.orientation.lock() calls
+  Array.from(document.querySelectorAll('script:not([src])')).forEach(script => {
+    if (/screen\.orientation\.lock\s*\(/.test(script.textContent)) {
+      foundLock = true;
+      incomplete.push({
+        id: 'orientation-lock',
+        description: 'Inline script calls screen.orientation.lock() — verify this lock is not applied without essential justification.',
+        help: 'Only lock orientation when absolutely essential to the content\'s function.',
+        helpUrl: 'https://www.w3.org/WAI/WCAG21/Understanding/orientation.html'
+      });
+    }
+  });
+
+  if (!foundLock) {
+    passes.push({ id: 'orientation-lock', description: 'No orientation lock detected in stylesheets or inline scripts.' });
+  }
+
+  return { violations, passes, incomplete };
+});
+
+// ---------- Multiple Ways Check (WCAG 2.4.5) ----------
+const multipleWaysCheck = await page.evaluate(() => {
+  const passes = [];
+  const incomplete = [];
+
+  const hasSearch = !!(
+    document.querySelector('input[type="search"]') ||
+    document.querySelector('[role="search"]') ||
+    document.querySelector('form[action*="search"]') ||
+    document.querySelector('input[name*="search"]') ||
+    document.querySelector('input[placeholder*="earch"]')
+  );
+
+  const hasSitemap = Array.from(document.querySelectorAll('a')).some(a =>
+    /sitemap/i.test(a.textContent) ||
+    /sitemap/i.test(a.getAttribute('href') || '')
+  );
+
+  if (hasSearch || hasSitemap) {
+    passes.push({ id: 'multiple-ways', description: 'Page provides search or sitemap link — multiple ways to navigate confirmed.' });
+  } else {
+    incomplete.push({
+      id: 'multiple-ways',
+      description: 'No search input or sitemap link detected. Single-page scan cannot confirm multiple navigation pathways exist across the site.',
+      help: 'Provide at least two ways to locate content: site search, sitemap, navigation menus, related links, etc.',
+      helpUrl: 'https://www.w3.org/WAI/WCAG21/Understanding/multiple-ways.html'
+    });
+  }
+
+  return { violations: [], passes, incomplete };
+});
+
+// ---------- Sensory Characteristics Check (WCAG 1.3.3) – incomplete only ----------
+const sensoryCharacteristicsCheck = await page.evaluate(() => {
+  const passes = [];
+  const incomplete = [];
+
+  // Pattern: sensory adjective followed within 60 chars by a UI element noun
+  const sensoryPattern = /\b(red|blue|green|yellow|orange|pink|purple|round|square|circular|triangle|left|right|above|below|top|bottom|corner|shape|colour|color)\b.{0,60}(button|icon|link|field|box|image|picture|element|area|section)/i;
+
+  const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, null, false);
+  let node;
+  const flagged = new Set();
+
+  while ((node = walker.nextNode())) {
+    const text = node.textContent.trim();
+    if (text.length < 10) continue;
+    const parent = node.parentElement;
+    if (!parent || ['SCRIPT', 'STYLE', 'CODE', 'PRE'].includes(parent.tagName)) continue;
+    if (flagged.has(parent)) continue;
+    if (sensoryPattern.test(text)) {
+      flagged.add(parent);
+      incomplete.push({
+        id: 'sensory-characteristics',
+        description: `Text may rely on sensory characteristics: "${text.substring(0, 100).replace(/"/g, "'")}". Verify instructions do not rely solely on shape, colour, size, or location.`,
+        help: 'Supplement sensory references (e.g., "the red button") with non-sensory identification (e.g., name, function).',
+        helpUrl: 'https://www.w3.org/WAI/WCAG21/Understanding/sensory-characteristics.html'
+      });
+    }
+  }
+
+  if (incomplete.length === 0) {
+    passes.push({ id: 'sensory-characteristics', description: 'No obvious sensory-only instruction patterns detected.' });
+  }
+
+  return { violations: [], passes, incomplete };
+});
+
+// ---------- Pointer Gestures Check (WCAG 2.5.1) – incomplete only ----------
+const pointerGesturesCheck = await page.evaluate(() => {
+  const passes = [];
+  const incomplete = [];
+
+  const multiTouchPattern = /touches\s*\.\s*length\s*[>=>]\s*[2-9]|e\.touches\[1\]|pointermove.*multitouch|pinch|swipe/i;
+  const singlePointerPattern = /\b(click|pointerdown|mousedown|touchstart)\b/i;
+  let foundMultiTouch = false;
+
+  Array.from(document.querySelectorAll('script:not([src])')).forEach(script => {
+    const content = script.textContent;
+    if (!multiTouchPattern.test(content)) return;
+    foundMultiTouch = true;
+    if (singlePointerPattern.test(content)) {
+      passes.push({ id: 'pointer-gestures', description: 'Multi-touch gesture detected alongside an apparent single-pointer handler.' });
+    } else {
+      incomplete.push({
+        id: 'pointer-gestures',
+        description: 'Inline script uses multi-touch or pointer gestures (pinch/swipe) without a detected single-pointer alternative.',
+        help: 'All functionality using multipoint gestures must also be operable with a single pointer (click/tap).',
+        helpUrl: 'https://www.w3.org/WAI/WCAG21/Understanding/pointer-gestures.html'
+      });
+    }
+  });
+
+  if (!foundMultiTouch) {
+    passes.push({ id: 'pointer-gestures', description: 'No multi-touch gesture patterns detected in inline scripts.' });
+  }
+
+  return { violations: [], passes, incomplete };
+});
+
+// ---------- Timing Adjustable Check (WCAG 2.2.1) ----------
+const timingAdjustableCheck = await page.evaluate(() => {
+  const violations = [];
+  const passes = [];
+  const incomplete = [];
+  let foundTiming = false;
+
+  // Check <meta http-equiv="refresh"> with a short timeout
+  const metaRefresh = document.querySelector('meta[http-equiv="refresh"]');
+  if (metaRefresh) {
+    const seconds = parseInt((metaRefresh.getAttribute('content') || ''), 10);
+    if (!isNaN(seconds) && seconds < 72000) {
+      foundTiming = true;
+      violations.push({
+        id: 'timing-adjustable',
+        impact: 'serious',
+        description: `Page uses <meta http-equiv="refresh"> with a ${seconds}s timeout. Users cannot extend or disable this time limit.`,
+        help: 'Do not use automatic page refresh/redirect under 20 hours, or provide a mechanism to turn off, adjust, or extend the limit.',
+        helpUrl: 'https://www.w3.org/WAI/WCAG21/Understanding/timing-adjustable.html',
+        tags: ['wcag2a', 'wcag221'],
+        nodes: [{ html: metaRefresh.outerHTML, target: ['meta'], failureSummary: '' }]
+      });
+    }
+  }
+
+  // Scan inline scripts for setTimeout/setInterval with short durations
+  const timerRegex = /set(?:Timeout|Interval)\s*\([^,]+,\s*(\d+)/g;
+  Array.from(document.querySelectorAll('script:not([src])')).forEach(script => {
+    const content = script.textContent;
+    let match;
+    while ((match = timerRegex.exec(content)) !== null) {
+      const ms = parseInt(match[1], 10);
+      // Only flag timers under 20 hours that are non-trivial (>= 3 seconds)
+      if (ms >= 3000 && ms < 72000000) {
+        foundTiming = true;
+        incomplete.push({
+          id: 'timing-adjustable',
+          description: `Script contains a ${ms < 60000 ? (ms / 1000).toFixed(1) + 's' : Math.round(ms / 60000) + 'min'} timer (set${match[0].includes('Interval') ? 'Interval' : 'Timeout'}). Verify whether this represents a user-facing time limit requiring adjustability.`,
+          help: 'If this timer controls user-facing expiry (session, form, media), ensure users can turn off, adjust, or extend the time limit.',
+          helpUrl: 'https://www.w3.org/WAI/WCAG21/Understanding/timing-adjustable.html'
+        });
+      }
+    }
+  });
+
+  if (!foundTiming) {
+    passes.push({ id: 'timing-adjustable', description: 'No automatic time limits (meta refresh or significant timers) detected.' });
+  }
+
+  return { violations, passes, incomplete };
+});
+
+// ---------- Content on Hover or Focus Check (WCAG 1.4.13) ----------
+const contentOnHoverCheck = await (async () => {
+  const violations = [];
+  const passes = [];
+  const incomplete = [];
+
+  // Stamp tooltip candidates (limit to 20)
+  const candidates = await page.evaluate(() => {
+    const sel = '[title], [data-tooltip], [data-tip], [aria-describedby]';
+    return Array.from(document.querySelectorAll(sel)).slice(0, 20).map((el, i) => {
+      el.setAttribute('data-hov-idx', i);
+      return { idx: i, tag: el.tagName.toLowerCase(), html: el.outerHTML };
+    });
+  });
+
+  for (const candidate of candidates) {
+    const sel = `[data-hov-idx="${candidate.idx}"]`;
+    try {
+      const domBefore = await page.evaluate(() => document.body.innerHTML.length);
+      await page.hover(sel);
+      await new Promise(r => setTimeout(r, 300));
+      const domAfter = await page.evaluate(() => document.body.innerHTML.length);
+
+      if (domAfter > domBefore + 50) {
+        // Tooltip-like content appeared – check if it can be dismissed with Escape
+        const escapeDismissed = await page.evaluate(() => {
+          const before = document.body.innerHTML.length;
+          document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+          return document.body.innerHTML.length < before;
+        });
+
+        if (escapeDismissed) {
+          passes.push({ id: 'content-on-hover', description: 'Hover-triggered content is dismissible via Escape key.' });
+        } else {
+          violations.push({
+            id: 'content-on-hover',
+            impact: 'moderate',
+            description: 'Content appears on hover but cannot be dismissed with the Escape key.',
+            help: 'Tooltip/popup content must be: (1) dismissible without moving pointer, (2) hoverable without disappearing, (3) persistent until dismissed.',
+            helpUrl: 'https://www.w3.org/WAI/WCAG21/Understanding/content-on-hover-or-focus.html',
+            tags: ['wcag21aa', 'wcag1413'],
+            nodes: [{ html: candidate.html, target: [candidate.tag], failureSummary: '' }]
+          });
+        }
+      }
+    } catch (_) { /* hover not possible or element removed */ }
+  }
+
+  // Clean up stamped attributes
+  await page.evaluate(() => {
+    document.querySelectorAll('[data-hov-idx]').forEach(el => el.removeAttribute('data-hov-idx'));
+  });
+
+  if (candidates.length === 0) {
+    passes.push({ id: 'content-on-hover', description: 'No hover/focus-triggered content candidates found.' });
+  }
+
+  return { violations, passes, incomplete };
+})();
+
+    // Merge ALL custom results into one object
     const mergedCustom = {
-  violations: customResult.violations.concat(focusCheck.violations, modalCheck.violations, c27.violations, c8.violations),
-  passes: customResult.passes.concat(focusCheck.passes, modalCheck.passes, c27.passes, c8.passes),
-  incomplete: customResult.incomplete.concat(c27.incomplete, c8.incomplete),
+  violations: [
+    ...customResult.violations,
+    ...videoCheck.violations,
+    ...videoTrackCheck.violations,
+    ...colorCheck.violations,
+    ...focusCheck.violations,
+    ...modalCheck.violations,
+    ...c27.violations,
+    ...c8.violations,
+    // Phase 1
+    ...nonTextContrastCheck.violations,
+    ...errorIdentificationCheck.violations,
+    ...focusVisibleCheck.violations,
+    ...resizeTextCheck.violations,
+    ...onFocusContextChangeCheck.violations,
+    // Phase 2 (heuristic – violations only where applicable)
+    ...orientationLockCheck.violations,
+    ...timingAdjustableCheck.violations,
+    ...contentOnHoverCheck.violations,
+  ],
+  passes: [
+    ...customResult.passes,
+    ...videoCheck.passes,
+    ...videoTrackCheck.passes,
+    ...colorCheck.passes,
+    ...focusCheck.passes,
+    ...modalCheck.passes,
+    ...c27.passes,
+    ...c8.passes,
+    // Phase 1
+    ...nonTextContrastCheck.passes,
+    ...errorIdentificationCheck.passes,
+    ...focusVisibleCheck.passes,
+    ...resizeTextCheck.passes,
+    ...onFocusContextChangeCheck.passes,
+    // Phase 2 (heuristic)
+    ...orientationLockCheck.passes,
+    ...multipleWaysCheck.passes,
+    ...sensoryCharacteristicsCheck.passes,
+    ...pointerGesturesCheck.passes,
+    ...timingAdjustableCheck.passes,
+    ...contentOnHoverCheck.passes,
+  ],
+  incomplete: [
+    ...customResult.incomplete,
+    ...c27.incomplete,
+    ...c8.incomplete,
+    // Phase 1
+    ...errorIdentificationCheck.incomplete,
+    // Phase 2 (heuristic – all flagged as incomplete)
+    ...orientationLockCheck.incomplete,
+    ...multipleWaysCheck.incomplete,
+    ...sensoryCharacteristicsCheck.incomplete,
+    ...pointerGesturesCheck.incomplete,
+    ...timingAdjustableCheck.incomplete,
+    ...contentOnHoverCheck.incomplete,
+  ],
 };
 
     // Extract links for embedded scanning (depth=1)
@@ -494,7 +1171,7 @@ const modalCheck = await page.evaluate(() => {
       return links;
     });
 
-    // Merge custom results with axe results
+    // Merge custom results with axe results (use full mergedCustom, not just G58/H53)
     const allViolations = results.violations.map(v => ({
       id: v.id,
       impact: v.impact,
@@ -503,7 +1180,7 @@ const modalCheck = await page.evaluate(() => {
       helpUrl: v.helpUrl,
       tags: v.tags,
       nodes: v.nodes.map(n => ({ html: n.html, target: n.target, failureSummary: n.failureSummary })),
-    })).concat(custom.violations);
+    })).concat(mergedCustom.violations);
 
     // ---------- Capture bounding boxes for each violation node ----------
     const violationsWithBBox = await Promise.all(allViolations.map(async (v, violIdx) => {
@@ -547,8 +1224,8 @@ const modalCheck = await page.evaluate(() => {
     const merged = {
       url: results.url,
       violations: violationsWithBBox,
-      passes: results.passes.map(p => ({ id: p.id, description: p.description })).concat(custom.passes),
-      incomplete: results.incomplete.map(i => ({ id: i.id, description: i.description })).concat(custom.incomplete),
+      passes: results.passes.map(p => ({ id: p.id, description: p.description })).concat(mergedCustom.passes),
+      incomplete: results.incomplete.map(i => ({ id: i.id, description: i.description })).concat(mergedCustom.incomplete),
       links: extractedLinks,
       screenshot: screenshotB64,
     };
