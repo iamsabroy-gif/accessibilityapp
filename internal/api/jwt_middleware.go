@@ -3,16 +3,13 @@ package api
 import (
     "encoding/json"
     "net/http"
-    "os"
     "strings"
+    "github.com/webaccessibility/server/internal/config"
     "github.com/golang-jwt/jwt/v4"
 )
 
 // jwtAuthMiddleware validates JWT tokens on protected routes.
-// Expected Authorization header: "Bearer <token>".
-// Tokens must be signed with HS256 using the secret from the JWT_SECRET environment variable.
-// Tokens are considered valid if the signature verifies and the "exp" claim is not expired.
-// On failure, the middleware responds with HTTP 401 and a standardized JSON error body.
+// It reads the secret from the runtime config (config.GetSecret()).
 func jwtAuthMiddleware(next http.HandlerFunc) http.HandlerFunc {
     return func(w http.ResponseWriter, r *http.Request) {
         authHeader := r.Header.Get("Authorization")
@@ -21,7 +18,7 @@ func jwtAuthMiddleware(next http.HandlerFunc) http.HandlerFunc {
             return
         }
         tokenString := strings.TrimPrefix(authHeader, "Bearer ")
-        secret := os.Getenv("JWT_SECRET")
+        secret := config.GetSecret()
         if secret == "" {
             // If secret is not set, reject all requests for safety.
             unauthorized(w)

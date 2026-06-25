@@ -3,6 +3,15 @@ package models
 // WCAGMap maps axe‑core rule IDs to the WCAG 2.1 success‑criterion numbers they satisfy.
 // A rule can cover multiple criteria, therefore the value is a slice.
 var WCAGMap = map[string][]string{
+    // Custom checks added in scripts/axe_runner.js
+    "g58-link-to-text-alternative": {"1.2.1"},
+    "h53-media-description":        {"1.2.3"},
+    // WCAG 1.3.2 custom checks (Phase 1 & Phase 2)
+    "meaningful-sequence-tabindex":      {"1.3.2"},
+    "meaningful-sequence-css-order":     {"1.3.2"},
+    "meaningful-sequence-absolute":      {"1.3.2"},
+    "meaningful-sequence-grid":          {"1.3.2"},
+    "video-captions-present": {"1.2.2"},
     // Core AXE rules (partial list – extend as needed)
     "accesskeys":                {"2.4.1"},
     "aria-allowed-attr":         {"4.1.2"},
@@ -49,6 +58,5 @@ var WCAGMap = map[string][]string{
     "select-name":               {"1.3.1"},
     "valid-lang":                {"3.1.1"},
     // Custom checks added in scripts/axe_runner.js
-    "g58-link-to-text-alternative": {"1.2.1"},
-    "h53-media-description":        {"1.2.3"},
+
 }

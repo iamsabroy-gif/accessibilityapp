@@ -4,9 +4,18 @@ import "time"
 
 // ScanRequest is the payload for POST /api/v1/scan.
 type ScanRequest struct {
-	URL       string `json:"url"`
-	WCAGLevel string `json:"wcag_level,omitempty"` // "AA" or "AAA"; defaults to server config
-	Depth     int    `json:"depth,omitempty"` // 0 (default) or 1, max 1
+	URL          string `json:"url"`
+	WCAGLevel    string `json:"wcag_level,omitempty"` // "AA" or "AAA"; defaults to server config
+	Depth        int    `json:"depth,omitempty"` // 0 (default) or 1, max 1
+	VisualReport bool   `json:"visual_report,omitempty"` // request visual HTML report
+}
+
+// BBox holds the absolute pixel coordinates of a DOM element on the scanned page.
+type BBox struct {
+	X      int `json:"x"`
+	Y      int `json:"y"`
+	Width  int `json:"width"`
+	Height int `json:"height"`
 }
 
 // Node represents a specific DOM element that triggered a violation.
@@ -14,17 +23,19 @@ type Node struct {
 	HTML           string   `json:"html"`
 	Target         []string `json:"target"`
 	FailureSummary string   `json:"failure_summary,omitempty"`
+	BBox           *BBox    `json:"bbox,omitempty"` // pixel coords on full-page screenshot
 }
 
 // Violation represents a single WCAG accessibility violation.
 type Violation struct {
-	ID          string   `json:"id"`
-	Impact      string   `json:"impact"` // "critical" | "serious" | "moderate" | "minor"
-	Description string   `json:"description"`
-	Help        string   `json:"help"`
-	HelpURL     string   `json:"help_url"`
-	Tags        []string `json:"tags"`
-	Nodes       []Node   `json:"nodes"`
+	ID             string   `json:"id"`
+	Impact         string   `json:"impact"` // "critical" | "serious" | "moderate" | "minor"
+	Description    string   `json:"description"`
+	Help           string   `json:"help"`
+	HelpURL        string   `json:"help_url"`
+	Tags           []string `json:"tags"`
+	Nodes          []Node   `json:"nodes"`
+	ViolationIndex int      `json:"violationIndex,omitempty"` // 1-based index for overlay markers
 }
 
 // Summary holds aggregated counts and the accessibility score for the scan.
@@ -51,6 +62,10 @@ type ScanResult struct {
 	Incomplete           []string    `json:"incomplete,omitempty"`
 	IncompleteGuidelines []string    `json:"incomplete_guidelines,omitempty"`
 	EmbeddedResults      []ScanResult `json:"embedded_results,omitempty"`
+	PageHTML         string       `json:"page_html,omitempty"`
+	VisualReportPath string       `json:"visual_report_path,omitempty"`
+	VisualReportHTML string       `json:"visual_report_html,omitempty"` // full HTML report, returned when visual_report=true
+	Screenshot       string       `json:"screenshot,omitempty"`         // base64-encoded PNG of the scanned page
 }
 
 // ErrorResponse is the standard error envelope.

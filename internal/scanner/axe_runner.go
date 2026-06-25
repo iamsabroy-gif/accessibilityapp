@@ -23,22 +23,32 @@ type axeRawResult struct {
 	Incomplete []axeRule       `json:"incomplete"`
 	Error      string          `json:"error,omitempty"`
 	Links      []string        `json:"links,omitempty"`
+	Screenshot string          `json:"screenshot,omitempty"`
 }
 
 type axeViolation struct {
-	ID          string    `json:"id"`
-	Impact      string    `json:"impact"`
-	Description string    `json:"description"`
-	Help        string    `json:"help"`
-	HelpURL     string    `json:"helpUrl"`
-	Tags        []string  `json:"tags"`
-	Nodes       []axeNode `json:"nodes"`
+	ID             string    `json:"id"`
+	Impact         string    `json:"impact"`
+	Description    string    `json:"description"`
+	Help           string    `json:"help"`
+	HelpURL        string    `json:"helpUrl"`
+	Tags           []string  `json:"tags"`
+	Nodes          []axeNode `json:"nodes"`
+	ViolationIndex int       `json:"violationIndex,omitempty"`
 }
 
 type axeNode struct {
-	HTML           string   `json:"html"`
-	Target         []string `json:"target"`
-	FailureSummary string   `json:"failureSummary"`
+	HTML           string    `json:"html"`
+	Target         []string  `json:"target"`
+	FailureSummary string    `json:"failureSummary"`
+	BBox           *axeBBox  `json:"bbox,omitempty"`
+}
+
+type axeBBox struct {
+	X      int `json:"x"`
+	Y      int `json:"y"`
+	Width  int `json:"width"`
+	Height int `json:"height"`
 }
 
 type axeRule struct {
@@ -63,16 +73,18 @@ func (a *AxeRunner) Scan(ctx context.Context, url string, wcagLevel string, dept
 
     // Execute the node script with depth argument (passed for future use)
     cmd := exec.CommandContext(ctx, a.nodeBin, a.scriptPath, url, wcagLevel)
-    output, err := cmd.Output()
+    output, err := cmd.CombinedOutput()
     if err != nil {
+        // Try to parse JSON error from stdout (which may contain {"error":...})
+        var rawErr struct { Error string `json:"error"` }
+        if jsonErr := json.Unmarshal(output, &rawErr); jsonErr == nil && rawErr.Error != "" {
+            return nil, fmt.Errorf("axe runner error: %s", rawErr.Error)
+        }
         if ctx.Err() == context.DeadlineExceeded {
             return nil, fmt.Errorf("scan timed out for URL: %s", url)
         }
-        // Capture stderr if available
-        if exitErr, ok := err.(*exec.ExitError); ok {
-            return nil, fmt.Errorf("axe runner failed: %s", string(exitErr.Stderr))
-        }
-        return nil, fmt.Errorf("axe runner error: %w", err)
+        // Fallback to whatever output we have (may include stderr/stdout)
+        return nil, fmt.Errorf("axe runner failed: %s", string(output))
     }
 
     var raw axeRawResult
@@ -154,20 +166,30 @@ func mapToScanResult(raw axeRawResult, url, wcagLevel string, durationMs int64) 
 	for _, v := range raw.Violations {
 		nodes := make([]models.Node, 0, len(v.Nodes))
 		for _, n := range v.Nodes {
-			nodes = append(nodes, models.Node{
+			node := models.Node{
 				HTML:           n.HTML,
 				Target:         n.Target,
 				FailureSummary: n.FailureSummary,
-			})
+			}
+			if n.BBox != nil {
+				node.BBox = &models.BBox{
+					X:      n.BBox.X,
+					Y:      n.BBox.Y,
+					Width:  n.BBox.Width,
+					Height: n.BBox.Height,
+				}
+			}
+			nodes = append(nodes, node)
 		}
 		violations = append(violations, models.Violation{
-			ID:          v.ID,
-			Impact:      v.Impact,
-			Description: v.Description,
-			Help:        v.Help,
-			HelpURL:     v.HelpURL,
-			Tags:        v.Tags,
-			Nodes:       nodes,
+			ID:             v.ID,
+			Impact:         v.Impact,
+			Description:    v.Description,
+			Help:           v.Help,
+			HelpURL:        v.HelpURL,
+			Tags:           v.Tags,
+			Nodes:          nodes,
+			ViolationIndex: v.ViolationIndex,
 		})
 	}
 
@@ -209,6 +231,7 @@ func mapToScanResult(raw axeRawResult, url, wcagLevel string, durationMs int64) 
 		Passes:     passIDs,
 		Incomplete: incompleteIDs,
 		EmbeddedResults: nil,
+		Screenshot: raw.Screenshot,
 	}
 
 	// Populate guideline slices into the result struct

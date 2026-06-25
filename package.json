@@ -4,7 +4,14 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "jest --verbose",
+    "test:wcag122": "jest scripts/wcag122_captions.test.js --verbose"
+  },
+  "jest": {
+    "testEnvironment": "jsdom",
+    "testMatch": [
+      "**/scripts/**/*.test.js"
+    ]
   },
   "keywords": [],
   "author": "",
@@ -13,5 +20,9 @@
   "dependencies": {
     "axe-core": "^4.12.1",
     "puppeteer": "^25.1.0"
+  },
+  "devDependencies": {
+    "jest": "^29.7.0",
+    "jest-environment-jsdom": "^29.7.0"
   }
 }

@@ -1,46 +1,98 @@
 package config
 
 import (
-	"os"
-	"strconv"
+    "crypto/rand"
+    "encoding/base64"
+    "os"
+    "strconv"
+    "sync"
 )
 
 // Config holds all application configuration.
 type Config struct {
-	Port                string
-	ScanTimeoutSeconds  int
-	WCAGLevel           string
-	MaxConcurrentScans  int
-	JWTSecret           string
-	NodeBin             string
-	AxeRunnerScript     string
+    Port               string
+    ScanTimeoutSeconds int
+    WCAGLevel          string
+    MaxConcurrentScans int
+    JWTSecret          string
+    NodeBin            string
+    AxeRunnerScript    string
+}
+
+// global holds the runtime configuration and is accessed concurrently.
+var (
+    global *Config
+    mu     sync.RWMutex
+)
+
+// InitGlobal stores the loaded configuration for runtime access.
+func InitGlobal(c *Config) {
+    mu.Lock()
+    defer mu.Unlock()
+    global = c
+}
+
+// GetSecret returns the current JWT secret in a thread‑safe manner.
+func GetSecret() string {
+    mu.RLock()
+    defer mu.RUnlock()
+    if global == nil {
+        return ""
+    }
+    return global.JWTSecret
+}
+
+// SetSecret updates the JWT secret at runtime.
+func SetSecret(newSecret string) {
+    mu.Lock()
+    defer mu.Unlock()
+    if global == nil {
+        // Should never happen, but guard against nil.
+        global = &Config{}
+    }
+    global.JWTSecret = newSecret
+}
+
+// generateRandomSecret creates a cryptographically‑secure secret when none is provided.
+func generateRandomSecret(n int) string {
+    b := make([]byte, n)
+    if _, err := rand.Read(b); err != nil {
+        // Fallback to a static value (unlikely).
+        return "fallback-static-secret-please-set-JWT_SECRET"
+    }
+    return base64.RawURLEncoding.EncodeToString(b)
 }
 
 // Load reads configuration from environment variables with sensible defaults.
 func Load() *Config {
-	return &Config{
-		Port:               getEnv("PORT", "8080"),
-		ScanTimeoutSeconds: getEnvInt("SCAN_TIMEOUT_SECONDS", 30),
-		WCAGLevel:          getEnv("WCAG_LEVEL", "AA"),
-		MaxConcurrentScans: getEnvInt("MAX_CONCURRENT_SCANS", 5),
-		JWTSecret:          getEnv("JWT_SECRET", ""),
-		NodeBin:            getEnv("NODE_BIN", "node"),
-		AxeRunnerScript:    getEnv("AXE_RUNNER_SCRIPT", "scripts/axe_runner.js"),
-	}
+    secret := getEnv("JWT_SECRET", "")
+    if secret == "" {
+        // Generate a random secret if none is supplied.
+        secret = generateRandomSecret(32)
+    }
+    return &Config{
+        Port:               getEnv("PORT", "8080"),
+        ScanTimeoutSeconds: getEnvInt("SCAN_TIMEOUT_SECONDS", 30),
+        WCAGLevel:          getEnv("WCAG_LEVEL", "AA"),
+        MaxConcurrentScans: getEnvInt("MAX_CONCURRENT_SCANS", 5),
+        JWTSecret:          secret,
+        NodeBin:            getEnv("NODE_BIN", "node"),
+        AxeRunnerScript:    getEnv("AXE_RUNNER_SCRIPT", "scripts/axe_runner.js"),
+    }
 }
 
 func getEnv(key, fallback string) string {
-	if v := os.Getenv(key); v != "" {
-		return v
-	}
-	return fallback
+    if v := os.Getenv(key); v != "" {
+        return v
+    }
+    return fallback
 }
 
 func getEnvInt(key string, fallback int) int {
-	if v := os.Getenv(key); v != "" {
-		if n, err := strconv.Atoi(v); err == nil {
-			return n
-		}
-	}
-	return fallback
+    if v := os.Getenv(key); v != "" {
+        if n, err := strconv.Atoi(v); err == nil {
+            return n
+        }
+    }
+    return fallback
 }
