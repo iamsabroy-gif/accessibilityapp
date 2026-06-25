@@ -91,17 +91,41 @@ func (h *Handler) Scan(w http.ResponseWriter, r *http.Request) {
 
 // GenerateToken handles POST /api/v1/token to issue a JWT.
 func (h *Handler) GenerateToken(w http.ResponseWriter, r *http.Request) {
-    var req struct { Secret string `json:"secret"` }
+    var req struct {
+        Secret       string `json:"secret"`
+        ClientSecret string `json:"client_secret"`
+    }
     if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
         writeError(w, http.StatusBadRequest, "invalid request body", err.Error())
         return
     }
-    if req.Secret == "" {
-        writeError(w, http.StatusBadRequest, "secret is required", "")
+
+    secretInput := req.Secret
+    if secretInput == "" {
+        secretInput = req.ClientSecret
+    }
+
+    if secretInput == "" {
+        writeError(w, http.StatusBadRequest, "secret or client_secret is required", "")
         return
     }
-    token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.StandardClaims{ExpiresAt: time.Now().Add(30 * time.Minute).Unix(), Issuer: "webaccessibility"})
-    signed, err := token.SignedString([]byte(req.Secret))
+
+    serverSecret := config.GetSecret()
+    if serverSecret == "" {
+        writeError(w, http.StatusInternalServerError, "JWT secret is not configured on the server", "")
+        return
+    }
+
+    if secretInput != serverSecret {
+        writeError(w, http.StatusUnauthorized, "invalid secret", "")
+        return
+    }
+
+    token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.StandardClaims{
+        ExpiresAt: time.Now().Add(30 * time.Minute).Unix(),
+        Issuer:    "webaccessibility",
+    })
+    signed, err := token.SignedString([]byte(serverSecret))
     if err != nil {
         writeError(w, http.StatusInternalServerError, "failed to sign token", err.Error())
         return
