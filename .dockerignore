@@ -1,0 +1,30 @@
+# Version control
+.git
+.gitignore
+
+# macOS artifacts
+.DS_Store
+~$*
+
+# Node – reinstalled inside Docker via npm ci
+node_modules
+
+# Go build cache
+*.test
+*.out
+
+# Analysis / planning docs (not needed at runtime)
+*.md
+*.xlsx
+*.numbers
+wcag_1_3_2_*.js
+
+# Test files
+scripts/*.test.js
+
+# Temp / scratch
+cmd/smoke
+
+# Render / CI files (already baked into image)
+render.yaml
+.dockerignore

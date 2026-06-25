@@ -21,8 +21,8 @@ func NewRouter(h *Handler, logger *zap.Logger) *chi.Mux {
         r.Post("/scan", jwtAuthMiddleware(h.Scan))
         r.Post("/score", jwtAuthMiddleware(h.ScoreOnly))
         r.Post("/token", h.GenerateToken) // public
-        r.Post("/secret", jwtAuthMiddleware(h.SetSecret)) // protected endpoint to change secret
-        r.Get("/secret", h.GetSecret) // **unprotected** endpoint to retrieve current secret (dev only)
+        r.Post("/secret", jwtAuthMiddleware(h.SetSecret)) // protected: change secret
+        r.Get("/secret", jwtAuthMiddleware(h.GetSecret)) // protected: retrieve secret (dev/ops only)
     })
 
     return r

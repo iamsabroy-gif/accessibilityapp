@@ -1,0 +1,54 @@
+# render.yaml – Infrastructure-as-Code for Render
+# Docs: https://render.com/docs/blueprint-spec
+#
+# How to use:
+#   1. Push this file to your GitHub repo root.
+#   2. Go to dashboard.render.com → New → Blueprint.
+#   3. Connect the repo – Render reads this file automatically.
+#   4. Click "Apply" to create the service.
+
+services:
+  - type: web
+    name: webaccessibility-api
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+
+    # Free tier: 512 MB RAM, shared CPU, spins down after 15 min idle.
+    # Upgrade to "starter" ($7/mo) for always-on + more RAM.
+    plan: free
+
+    # Closest region to your users:
+    #   oregon (US West), ohio (US East), frankfurt (EU), singapore (Asia)
+    region: oregon
+
+    # Auto-deploy every push to main
+    branch: main
+
+    # Render pings this path to decide if the container is healthy
+    healthCheckPath: /api/v1/health
+
+    envVars:
+      # Render generates a cryptographically-secure random secret on first deploy.
+      # Copy the value from the dashboard if you need to issue tokens manually.
+      - key: JWT_SECRET
+        generateValue: true
+
+      - key: WCAG_LEVEL
+        value: AA
+
+      # 60s gives Puppeteer enough headroom on free-tier CPUs
+      - key: SCAN_TIMEOUT_SECONDS
+        value: "60"
+
+      # Keep low on free tier (512 MB RAM, ~200-300 MB per Chromium instance)
+      - key: MAX_CONCURRENT_SCANS
+        value: "3"
+
+      - key: PORT
+        value: "8080"
+
+      - key: NODE_BIN
+        value: node
+
+      - key: AXE_RUNNER_SCRIPT
+        value: scripts/axe_runner.js
