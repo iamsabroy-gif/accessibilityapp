@@ -318,27 +318,34 @@ const videoTrackCheck = await page.evaluate(() => {
 const colorCheck = await page.evaluate(() => {
   const violations = [];
   const passes = [];
-  const cssRules = [];
-  // Collect selectors that use :focus or :invalid and change background or border colour
+  const stateRules = [];
+  // Inspect each state rule against only the elements matched by that rule's
+  // base selector. The previous last-token regex widened selectors such as
+  // ".form-field input:focus" to every input on the page.
   for (const sheet of document.styleSheets) {
     try {
       for (const rule of sheet.cssRules) {
         const selector = rule.selectorText || '';
         const style = rule.style || {};
         if (!selector) continue;
-        const pseudoMatch = selector.match(/([^:\s]+)\s*:(focus|invalid)/i);
-        if (!pseudoMatch) continue;
-        const baseSelector = pseudoMatch[1];
+        const stateMatch = selector.match(/:(focus(?:-visible)?|invalid)\b/i);
+        if (!stateMatch) continue;
         if (style.backgroundColor || style.borderColor) {
-          cssRules.push(baseSelector);
+          const baseSelector = selector.replace(/:(?:focus(?:-visible)?|invalid)\b/gi, '').trim();
+          const hasNonColorCue = Boolean(
+            style.outline ||
+            (style.boxShadow && style.boxShadow !== 'none') ||
+            style.borderWidth ||
+            style.borderStyle
+          );
+          stateRules.push({ baseSelector, hasNonColorCue });
         }
       }
     } catch (e) {
       // ignore cross‑origin sheets
     }
   }
-  const uniqueSelectors = Array.from(new Set(cssRules));
-  uniqueSelectors.forEach(sel => {
+  stateRules.forEach(({ baseSelector: sel, hasNonColorCue }) => {
     let elements;
     try {
       elements = document.querySelectorAll(sel);
@@ -351,7 +358,7 @@ const colorCheck = await page.evaluate(() => {
       // Heuristic: no textual or iconic indicator within the element
       const hasIcon = el.querySelector('svg, img, [role="img"]');
       const hasText = el.textContent.trim().length > 0;
-      if (!hasIcon && !hasText) {
+      if (!hasNonColorCue && !hasIcon && !hasText) {
         const node = { html: el.outerHTML, target: [el.tagName.toLowerCase()], failureSummary: '' };
         violations.push({
           id: 'color-only-indicator',
@@ -716,6 +723,11 @@ const focusVisibleCheck = await (async () => {
   for (let i = 0; i < count; i++) {
     const sel = `[data-fv-idx="${i}"]`;
     try {
+      // Earlier checks can leave a control focused. Establish a genuinely
+      // unfocused baseline before comparing its focus indicator styles.
+      await page.evaluate(() => {
+        if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
+      });
       // Capture unfocused computed styles
       const unfocused = await page.$eval(sel, el => {
         const s = window.getComputedStyle(el);

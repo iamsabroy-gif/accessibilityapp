@@ -254,11 +254,97 @@ function renderResults(result) {
   const screenshotImg     = $('screenshot-img');
   const screenshotSrc     = result.screenshot || result.visual_report_screenshot;
   if (screenshotSection && screenshotImg && screenshotSrc) {
+    renderIssuePreview(screenshotImg, violations);
     screenshotImg.src = screenshotSrc.startsWith('data:') ? screenshotSrc : `data:image/png;base64,${screenshotSrc}`;
     screenshotSection.classList.remove('hidden');
   } else if (screenshotSection) {
     screenshotSection.classList.add('hidden');
   }
+}
+
+function renderIssuePreview(image, violations) {
+  const overlay = $('issue-overlay');
+  const filters = $('preview-filters');
+  const summary = $('preview-summary');
+  if (!overlay || !filters || !summary) return;
+
+  const impacted = violations.flatMap((violation, violationIndex) =>
+    (violation.nodes || [])
+      .filter(node => node.bbox && node.bbox.width > 0 && node.bbox.height > 0)
+      .map((node, nodeIndex) => ({ violation, violationIndex, nodeIndex, bbox: node.bbox }))
+  );
+
+  overlay.replaceChildren();
+  filters.replaceChildren();
+  summary.textContent = impacted.length
+    ? `${impacted.length} impacted component${impacted.length === 1 ? '' : 's'} highlighted on the scanned page.`
+    : 'No impacted component positions were available for this scan.';
+
+  const severities = ['critical', 'serious', 'moderate', 'minor']
+    .filter(impact => impacted.some(item => (item.violation.impact || 'minor') === impact));
+  let activeSeverity = 'all';
+
+  const applyFilter = severity => {
+    activeSeverity = severity;
+    overlay.querySelectorAll('.issue-indicator').forEach(indicator => {
+      indicator.hidden = severity !== 'all' && indicator.dataset.impact !== severity;
+    });
+    filters.querySelectorAll('button').forEach(button => {
+      const selected = button.dataset.impact === activeSeverity;
+      button.classList.toggle('active', selected);
+      button.setAttribute('aria-pressed', String(selected));
+    });
+  };
+
+  ['all', ...severities].forEach(impact => {
+    const count = impact === 'all' ? impacted.length : impacted.filter(item => item.violation.impact === impact).length;
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = `preview-filter ${impact}`;
+    button.dataset.impact = impact;
+    button.textContent = `${impact === 'all' ? 'All' : impact[0].toUpperCase() + impact.slice(1)} (${count})`;
+    button.addEventListener('click', () => applyFilter(impact));
+    filters.appendChild(button);
+  });
+
+  const positionIndicators = () => {
+    if (!image.naturalWidth || !image.naturalHeight) return;
+    overlay.replaceChildren();
+    impacted.forEach(({ violation, violationIndex, bbox }) => {
+      const indicator = document.createElement('button');
+      const impact = violation.impact || 'minor';
+      indicator.type = 'button';
+      indicator.className = `issue-indicator ${impact}`;
+      indicator.dataset.impact = impact;
+      indicator.hidden = activeSeverity !== 'all' && activeSeverity !== impact;
+      indicator.style.left = `${Math.max(0, bbox.x) / image.naturalWidth * 100}%`;
+      indicator.style.top = `${Math.max(0, bbox.y) / image.naturalHeight * 100}%`;
+      indicator.style.width = `${Math.min(bbox.width, image.naturalWidth) / image.naturalWidth * 100}%`;
+      indicator.style.height = `${Math.min(bbox.height, image.naturalHeight) / image.naturalHeight * 100}%`;
+      indicator.setAttribute('aria-label', `${impact} issue: ${violation.help || violation.description || violation.id}`);
+      indicator.title = `${violation.id}: ${violation.help || violation.description || ''}`;
+
+      const badge = document.createElement('span');
+      badge.className = 'issue-indicator-badge';
+      badge.textContent = String(violationIndex + 1);
+      indicator.appendChild(badge);
+      indicator.addEventListener('click', () => focusViolation(violationIndex));
+      overlay.appendChild(indicator);
+    });
+  };
+
+  image.addEventListener('load', positionIndicators, { once: true });
+  applyFilter('all');
+}
+
+function focusViolation(violationIndex) {
+  const card = document.querySelector(`[data-violation-index="${violationIndex}"]`);
+  if (!card) return;
+  card.classList.add('open', 'indicator-focus');
+  card.querySelector('.violation-header')?.setAttribute('aria-expanded', 'true');
+  card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  card.querySelector('.violation-header')?.focus({ preventScroll: true });
+  setTimeout(() => card.classList.remove('indicator-focus'), 1800);
 }
 
 function impactOrder(impact) {
@@ -268,6 +354,7 @@ function impactOrder(impact) {
 function buildViolationCard(v) {
   const card = document.createElement('div');
   card.className = `violation-card ${v.impact || 'minor'}`;
+  card.dataset.violationIndex = String((state.scanResult?.violations || []).indexOf(v));
 
   const nodes    = v.nodes || [];
   const wcagRefs = (v.tags || [])
@@ -407,6 +494,99 @@ function escapeHTML(str) {
     .replace(/"/g, '&quot;');
 }
 
+function buildAIIssueBrief(result) {
+  const summary = result.summary || {};
+  const violations = result.violations || [];
+  const counts = { critical: 0, serious: 0, moderate: 0, minor: 0 };
+  violations.forEach(v => { if (counts[v.impact] !== undefined) counts[v.impact]++; });
+
+  const text = value => String(value ?? '').replace(/\r?\n/g, ' ').trim();
+  const list = value => Array.isArray(value) ? value.map(text).filter(Boolean) : [];
+  const lines = [
+    '# Accessibility Remediation Brief',
+    '',
+    '> Purpose: Give an AI coding assistant the complete scan context needed to locate and resolve the accessibility issues below.',
+    '',
+    '## Instructions for the AI assistant',
+    '',
+    '1. Resolve issues in severity order: critical, serious, moderate, then minor.',
+    '2. Preserve existing behavior and visual design unless a change is required for accessibility.',
+    '3. Treat selectors and HTML snippets as evidence from scan time; confirm them against the current source before editing.',
+    '4. Apply fixes to shared components when multiple affected elements have the same root cause.',
+    '5. After changes, run the project tests and repeat the accessibility scan.',
+    '',
+    '## Scan context',
+    '',
+    `- **URL:** ${text(result.url) || 'Not provided'}`,
+    `- **Scanned at:** ${text(result.scanned_at || result.scannedAt) || 'Not provided'}`,
+    `- **WCAG level:** ${text(summary.wcag_level || summary.level) || 'Not provided'}`,
+    `- **Score:** ${summary.score ?? 0}/100 (${text(summary.grade) || 'ungraded'})`,
+    `- **Compliance:** ${Number(summary.compliance_pct ?? summary.compliancePct ?? 0).toFixed(1)}%`,
+    `- **Issues:** ${violations.length} rules; ${violations.reduce((total, v) => total + (v.nodes || []).length, 0)} affected elements`,
+    `- **Severity:** ${counts.critical} critical, ${counts.serious} serious, ${counts.moderate} moderate, ${counts.minor} minor`,
+    '',
+    '## Issues',
+    '',
+  ];
+
+  if (!violations.length) {
+    lines.push('No automated accessibility violations were found.', '');
+  }
+
+  violations.forEach((violation, issueIndex) => {
+    const tags = list(violation.tags);
+    const suggestion = violation.dev_suggestion || violation.devSuggestion;
+    lines.push(
+      `### ${issueIndex + 1}. ${text(violation.id) || 'Unknown rule'} — ${text(violation.impact || 'unknown').toUpperCase()}`,
+      '',
+      `- **What failed:** ${text(violation.help || violation.description) || 'No description provided'}`,
+      `- **Description:** ${text(violation.description) || 'No additional description provided'}`,
+      `- **WCAG/axe tags:** ${tags.length ? tags.join(', ') : 'Not provided'}`,
+      `- **Reference:** ${text(violation.help_url || violation.helpUrl) || 'Not provided'}`,
+      `- **Affected elements:** ${(violation.nodes || []).length}`,
+      ''
+    );
+
+    (violation.nodes || []).forEach((node, nodeIndex) => {
+      const targets = list(node.target);
+      lines.push(`#### Affected element ${nodeIndex + 1}`, '');
+      if (targets.length) lines.push(`- **Selector:** \`${targets.join(' > ').replace(/`/g, '\\`')}\``);
+      const failure = text(node.failureSummary || node.failure_summary);
+      if (failure) lines.push(`- **Failure reason:** ${failure}`);
+      if (node.html) lines.push('', '~~~html', String(node.html).trim(), '~~~');
+      lines.push('');
+    });
+
+    if (suggestion) {
+      lines.push('#### Suggested remediation', '');
+      if (suggestion.title) lines.push(`**${text(suggestion.title)}**`, '');
+      list(suggestion.fix_steps).forEach((step, stepIndex) => lines.push(`${stepIndex + 1}. ${step}`));
+      if (suggestion.code_before) lines.push('', 'Before:', '', `~~~${text(suggestion.language) || 'html'}`, String(suggestion.code_before).trim(), '~~~');
+      if (suggestion.code_after) lines.push('', 'After:', '', `~~~${text(suggestion.language) || 'html'}`, String(suggestion.code_after).trim(), '~~~');
+      lines.push('');
+    }
+  });
+
+  lines.push('## Completion checklist', '', '- [ ] All critical issues resolved', '- [ ] All serious issues resolved', '- [ ] Moderate and minor issues reviewed', '- [ ] Keyboard and screen-reader behavior manually checked', '- [ ] Automated tests pass', '- [ ] Accessibility scan rerun', '');
+  return lines.join('\n');
+}
+
+function downloadAIIssueBrief() {
+  if (!state.scanResult) return;
+  const markdown = buildAIIssueBrief(state.scanResult);
+  const blob = new Blob([markdown], { type: 'text/markdown;charset=utf-8' });
+  const objectURL = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  let host = 'scanned-page';
+  try { host = new URL(state.scanResult.url).hostname || host; } catch (_) { /* use fallback */ }
+  link.href = objectURL;
+  link.download = `${host.replace(/[^a-z0-9.-]+/gi, '-')}-accessibility-issues.md`;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(objectURL), 1000);
+}
+
 // ─── Admin Panel ───────────────────────────────────────────────
 // Step 1: 5-click the dot → show password prompt modal
 // Step 2: enter ADMIN_PASSWORD → verify via POST /api/v1/admin/verify
@@ -432,6 +612,7 @@ function openAdminPasswordModal() {
   input.value = '';
   modal.classList.add('open');
   modal.setAttribute('aria-hidden', 'false');
+  modal.removeAttribute('inert');
   setTimeout(() => input.focus(), 100);
   document.body.style.overflow = 'hidden';
 }
@@ -441,6 +622,7 @@ function closeAdminPasswordModal() {
   if (!modal) return;
   modal.classList.remove('open');
   modal.setAttribute('aria-hidden', 'true');
+  modal.setAttribute('inert', '');
   document.body.style.overflow = '';
 }
 
@@ -495,6 +677,7 @@ function openAdminDrawer() {
   overlay.setAttribute('aria-hidden', 'false');
   drawer.classList.add('open');
   drawer.setAttribute('aria-hidden', 'false');
+  drawer.removeAttribute('inert');
   document.body.style.overflow = 'hidden';
 }
 
@@ -503,6 +686,7 @@ function closeAdminDrawer() {
   $('admin-overlay').setAttribute('aria-hidden', 'true');
   $('admin-drawer').classList.remove('open');
   $('admin-drawer').setAttribute('aria-hidden', 'true');
+  $('admin-drawer').setAttribute('inert', '');
   document.body.style.overflow = '';
 }
 
@@ -569,6 +753,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // ── New Scan button ──────────────────────────────
   $('new-scan-btn')?.addEventListener('click', () => { setView('hero'); urlInput?.focus(); });
+  $('download-md-btn')?.addEventListener('click', downloadAIIssueBrief);
 
   // ── Admin trigger (5 clicks on hidden dot) ───────
   $('admin-trigger')?.addEventListener('click', triggerAdminClick);

@@ -89,7 +89,7 @@ body::before {
 
 /* ─── Utility Classes ──────────────────────────────────────── */
 .hidden { display: none !important; }
-.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: clip; clip: rect(0,0,0,0); clip-path: inset(50%); white-space: nowrap; }
 
 /* ─── Layout ───────────────────────────────────────────────── */
 #app {
@@ -232,6 +232,7 @@ body::before {
 }
 
 #url-input::placeholder { color: var(--text-muted); }
+#url-input:focus { box-shadow: inset 0 0 0 2px var(--text-accent); }
 
 #scan-btn {
   padding: 14px 28px;
@@ -287,10 +288,17 @@ body::before {
   color: #fff;
 }
 
+.pill-group input[type="radio"]:checked + label::before {
+  content: '✓';
+  display: inline-block;
+  margin-right: 5px;
+  font-weight: 800;
+}
+
 .form-label {
   font-size: 0.82rem;
   font-weight: 500;
-  color: var(--text-muted);
+  color: var(--text-secondary);
   text-transform: uppercase;
   letter-spacing: 0.08em;
 }
@@ -884,8 +892,8 @@ body::before {
 .form-field input,
 .form-field textarea {
   width: 100%;
-  background: var(--bg-card);
-  border: 1px solid var(--border);
+  background: #111827;
+  border: 1px solid #64748b;
   border-radius: var(--radius-md);
   padding: 12px 16px;
   color: var(--text-primary);
@@ -969,6 +977,7 @@ body::before {
 }
 
 /* ─── New Scan Button ──────────────────────────────────────── */
+.results-actions { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:32px; flex-wrap:wrap; }
 .new-scan-btn {
   display: inline-flex;
   align-items: center;
@@ -982,10 +991,11 @@ body::before {
   font-size: 0.9rem;
   font-weight: 600;
   cursor: pointer;
-  margin-bottom: 32px;
   transition: background 0.2s, transform 0.15s var(--ease-spring);
 }
 .new-scan-btn:hover { background: rgba(99,102,241,0.1); transform: translateY(-1px); }
+.download-md-btn { color:#6ee7b7; border-color:rgba(16,185,129,.4); }
+.download-md-btn:hover { background:rgba(16,185,129,.1); }
 
 /* ─── Animations ────────────────────────────────────────────── */
 @keyframes spin {
@@ -1194,11 +1204,26 @@ body::before {
   width: 100%;
   height: auto;
   border-radius: var(--radius-lg);
-  transition: transform 0.3s var(--ease-out);
 }
 
-.screenshot-wrap:hover .screenshot-img {
-  transform: scale(1.005);
+.preview-toolbar { display:flex; align-items:center; justify-content:space-between; gap:16px; margin-bottom:12px; flex-wrap:wrap; }
+.preview-summary, .preview-help { color:var(--text-secondary); font-size:.83rem; }
+.preview-help { margin-top:9px; }
+.preview-filters { display:flex; gap:6px; flex-wrap:wrap; }
+.preview-filter { border:1px solid var(--border); border-radius:var(--radius-full); background:var(--bg-card); color:var(--text-secondary); padding:5px 10px; font:600 .72rem/1.2 inherit; text-transform:capitalize; cursor:pointer; }
+.preview-filter:hover, .preview-filter.active { border-color:var(--text-accent); color:var(--text-primary); background:rgba(99,102,241,.18); }
+.issue-overlay { position:absolute; inset:0; pointer-events:none; }
+.issue-indicator { --indicator-color:var(--minor); position:absolute; min-width:10px; min-height:10px; padding:0; pointer-events:auto; cursor:pointer; background:rgba(56,189,248,.16); border:2px solid var(--indicator-color); box-shadow:0 0 0 2px rgba(7,11,24,.75),0 0 14px var(--indicator-color); }
+.issue-indicator.critical { --indicator-color:var(--critical); background:var(--critical-bg); }
+.issue-indicator.serious { --indicator-color:var(--serious); background:var(--serious-bg); }
+.issue-indicator.moderate { --indicator-color:var(--moderate); background:var(--moderate-bg); }
+.issue-indicator.minor { --indicator-color:var(--minor); background:var(--minor-bg); }
+.issue-indicator:hover, .issue-indicator:focus-visible { z-index:4; outline:2px solid #fff; outline-offset:2px; }
+.issue-indicator-badge { position:absolute; top:-11px; left:-11px; display:grid; place-items:center; width:22px; height:22px; border-radius:50%; background:var(--indicator-color); color:#fff; font:800 .68rem/1 inherit; box-shadow:0 2px 8px rgba(0,0,0,.6); }
+.violation-card.indicator-focus { box-shadow:0 0 0 3px var(--text-accent),0 0 28px var(--accent-glow); }
+
+@media (max-width: 600px) {
+  .preview-toolbar { align-items:flex-start; flex-direction:column; }
 }
 
 /* ─── Admin Password Modal ─────────────────────────────────── */
@@ -1267,8 +1292,8 @@ body::before {
 
 .modal-input {
   width: 100%;
-  background: var(--bg-card);
-  border: 1px solid var(--border);
+  background: #111827;
+  border: 1px solid #64748b;
   border-radius: var(--radius-md);
   padding: 13px 16px;
   color: var(--text-primary);
