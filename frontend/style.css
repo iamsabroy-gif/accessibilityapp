@@ -1026,6 +1026,181 @@ body::before {
 .stat-card:nth-child(4) { animation-delay: 0.20s; }
 .stat-card:nth-child(5) { animation-delay: 0.25s; }
 
+/* ─── Violation Body — extended fields ─────────────────────── */
+.vb-description {
+  font-size: 0.88rem;
+  color: var(--text-secondary);
+  line-height: 1.7;
+  margin: 14px 0 10px;
+}
+
+.vb-help-row {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+}
+
+.vb-help-label {
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--text-muted);
+  flex-shrink: 0;
+  padding: 2px 8px;
+  background: rgba(255,255,255,0.05);
+  border-radius: var(--radius-full);
+  border: 1px solid var(--border);
+}
+
+.vb-help-text {
+  font-size: 0.86rem;
+  color: var(--text-secondary);
+  line-height: 1.6;
+}
+
+.vb-help-link {
+  color: var(--text-accent);
+  text-decoration: none;
+  font-size: 0.84rem;
+}
+.vb-help-link:hover { text-decoration: underline; }
+
+/* ─── Dev Suggestion ────────────────────────────────────────── */
+.dev-suggestion {
+  margin-top: 16px;
+  border: 1px solid rgba(167,139,250,0.2);
+  border-radius: var(--radius-md);
+  background: rgba(13,14,26,0.6);
+  overflow: hidden;
+}
+
+.dev-suggestion-summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 11px 16px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: #a78bfa;
+  cursor: pointer;
+  user-select: none;
+  list-style: none;
+  transition: background 0.15s;
+}
+.dev-suggestion-summary::-webkit-details-marker { display: none; }
+.dev-suggestion-summary:hover { background: rgba(167,139,250,0.07); }
+
+/* Rotate the arrow chevron when open */
+.dev-suggestion[open] .dev-suggestion-summary svg {
+  transform: rotate(90deg);
+}
+.dev-suggestion-summary svg {
+  transition: transform 0.2s var(--ease-out);
+  flex-shrink: 0;
+}
+
+.ds-title-preview {
+  flex: 1;
+  font-weight: 400;
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.dev-suggestion[open] .ds-title-preview { display: none; }
+
+.dev-suggestion-body {
+  padding: 4px 16px 16px;
+  border-top: 1px solid rgba(167,139,250,0.12);
+}
+
+.ds-heading {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin: 12px 0 10px;
+}
+
+.ds-fix-steps {
+  margin: 0 0 14px 20px;
+  padding: 0;
+  color: var(--text-secondary);
+  font-size: 0.82rem;
+  line-height: 1.8;
+}
+
+.ds-fix-steps li { margin-bottom: 2px; }
+
+/* Before / After code pair */
+.ds-code-pair {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+@media (max-width: 640px) {
+  .ds-code-pair { grid-template-columns: 1fr; }
+}
+
+.ds-code-block {
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  border: 1px solid var(--border);
+}
+
+.ds-code-label {
+  padding: 5px 12px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.ds-bad  .ds-code-label { background: rgba(244,63,94,0.15);  color: #fca5a5; border-bottom: 1px solid rgba(244,63,94,0.2);  }
+.ds-good .ds-code-label { background: rgba(16,185,129,0.12); color: #6ee7b7; border-bottom: 1px solid rgba(16,185,129,0.2); }
+
+.ds-code-block pre {
+  margin: 0;
+  padding: 10px 12px;
+  font-family: 'JetBrains Mono', 'Fira Code', 'Courier New', monospace;
+  font-size: 0.75rem;
+  line-height: 1.6;
+  color: #94a3b8;
+  white-space: pre-wrap;
+  word-break: break-word;
+  background: rgba(0,0,0,0.3);
+}
+
+/* ─── Page Screenshot ───────────────────────────────────────── */
+#screenshot-section {
+  margin-bottom: 40px;
+  animation: fadeSlideUp 0.5s var(--ease-out) 0.4s both;
+}
+
+.screenshot-wrap {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  position: relative;
+}
+
+.screenshot-img {
+  display: block;
+  width: 100%;
+  height: auto;
+  border-radius: var(--radius-lg);
+  transition: transform 0.3s var(--ease-out);
+}
+
+.screenshot-wrap:hover .screenshot-img {
+  transform: scale(1.005);
+}
+
 /* ─── Admin Password Modal ─────────────────────────────────── */
 .modal-wrap {
   position: fixed;

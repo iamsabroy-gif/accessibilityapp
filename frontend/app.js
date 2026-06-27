@@ -238,6 +238,17 @@ function renderResults(result) {
       .sort((a, b) => impactOrder(b.impact) - impactOrder(a.impact))
       .forEach(v => violList.appendChild(buildViolationCard(v)));
   }
+
+  // ── Page Screenshot ───────────────────────────
+  const screenshotSection = $('screenshot-section');
+  const screenshotImg     = $('screenshot-img');
+  const screenshotSrc     = result.screenshot || result.visual_report_screenshot;
+  if (screenshotSection && screenshotImg && screenshotSrc) {
+    screenshotImg.src = screenshotSrc.startsWith('data:') ? screenshotSrc : `data:image/png;base64,${screenshotSrc}`;
+    screenshotSection.classList.remove('hidden');
+  } else if (screenshotSection) {
+    screenshotSection.classList.add('hidden');
+  }
 }
 
 function impactOrder(impact) {
@@ -254,6 +265,7 @@ function buildViolationCard(v) {
     .map(t => t.replace('wcag', 'WCAG '))
     .join(', ');
 
+  // ── Affected element nodes ───────────────────────
   const nodeHTML = nodes.slice(0, 3).map(n => {
     const html    = n.html ? escapeHTML(n.html) : '';
     const summary = n.failureSummary || n.failure_summary || '';
@@ -268,6 +280,44 @@ function buildViolationCard(v) {
     ? `<p style="font-size:0.8rem;color:var(--text-muted);margin-top:4px;">+${nodes.length - 3} more element(s)</p>`
     : '';
 
+  // ── Dev Suggestion ───────────────────────────────
+  const ds = v.dev_suggestion || v.devSuggestion || null;
+  let devSuggestionHTML = '';
+  if (ds) {
+    const fixStepsHTML = (ds.fix_steps || []).map(s => `<li>${escapeHTML(s)}</li>`).join('');
+    const codeBefore   = ds.code_before || '';
+    const codeAfter    = ds.code_after  || '';
+    const lang         = escapeHTML(ds.language || 'code');
+
+    devSuggestionHTML = `
+      <details class="dev-suggestion">
+        <summary class="dev-suggestion-summary">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><polyline points="9 18 15 12 9 6"/></svg>
+          <span>🔧 Developer Fix Suggestion</span>
+          <span class="ds-title-preview">${escapeHTML(ds.title || '')}</span>
+        </summary>
+        <div class="dev-suggestion-body">
+          ${ds.title ? `<div class="ds-heading">${escapeHTML(ds.title)}</div>` : ''}
+          ${fixStepsHTML ? `
+            <ol class="ds-fix-steps">${fixStepsHTML}</ol>
+          ` : ''}
+          ${(codeBefore || codeAfter) ? `
+            <div class="ds-code-pair">
+              ${codeBefore ? `
+                <div class="ds-code-block ds-bad">
+                  <div class="ds-code-label">❌ Before</div>
+                  <pre><code class="lang-${lang}">${escapeHTML(codeBefore)}</code></pre>
+                </div>` : ''}
+              ${codeAfter ? `
+                <div class="ds-code-block ds-good">
+                  <div class="ds-code-label">✅ After</div>
+                  <pre><code class="lang-${lang}">${escapeHTML(codeAfter)}</code></pre>
+                </div>` : ''}
+            </div>` : ''}
+        </div>
+      </details>`;
+  }
+
   card.innerHTML = `
     <div class="violation-header" role="button" aria-expanded="false" tabindex="0">
       <span class="impact-pill ${v.impact || 'minor'}">${v.impact || 'unknown'}</span>
@@ -281,14 +331,30 @@ function buildViolationCard(v) {
       </svg>
     </div>
     <div class="violation-body">
-      ${v.helpUrl
-        ? `<p>${escapeHTML(v.description || v.help || '')} — <a href="${escapeHTML(v.helpUrl)}" target="_blank" rel="noopener" style="color:var(--text-accent)">Learn more ↗</a></p>`
-        : `<p>${escapeHTML(v.description || v.help || '')}</p>`}
+
+      ${v.description ? `<p class="vb-description">${escapeHTML(v.description)}</p>` : ''}
+
+      ${v.help && v.help !== v.description ? `
+        <div class="vb-help-row">
+          <span class="vb-help-label">Help</span>
+          <span class="vb-help-text">
+            ${escapeHTML(v.help)}
+            ${v.helpUrl ? ` — <a href="${escapeHTML(v.helpUrl)}" target="_blank" rel="noopener" class="vb-help-link">WCAG reference ↗</a>` : ''}
+          </span>
+        </div>` : v.helpUrl ? `
+        <div class="vb-help-row">
+          <span class="vb-help-label">Reference</span>
+          <a href="${escapeHTML(v.helpUrl)}" target="_blank" rel="noopener" class="vb-help-link">WCAG documentation ↗</a>
+        </div>` : ''}
+
       ${nodes.length > 0 ? `
         <div class="nodes-title">Affected Elements (${nodes.length})</div>
         ${nodeHTML}
         ${moreNodes}
       ` : ''}
+
+      ${devSuggestionHTML}
+
     </div>`;
 
   const header = card.querySelector('.violation-header');
