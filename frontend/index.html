@@ -85,10 +85,22 @@
           <div class="form-controls">
             <span class="form-label" id="wcag-label">WCAG Level</span>
             <div class="pill-group" role="radiogroup" aria-labelledby="wcag-label">
+              <input type="radio" name="wcag-level" id="wcag-a"   value="A"   />
+              <label for="wcag-a"   title="WCAG 2.1 Level A — minimum compliance">A</label>
               <input type="radio" name="wcag-level" id="wcag-aa"  value="AA"  checked />
-              <label for="wcag-aa">AA</label>
+              <label for="wcag-aa"  title="WCAG 2.1 Level AA — standard compliance (recommended)">AA</label>
               <input type="radio" name="wcag-level" id="wcag-aaa" value="AAA" />
-              <label for="wcag-aaa">AAA</label>
+              <label for="wcag-aaa" title="WCAG 2.1 Level AAA — enhanced compliance">AAA</label>
+            </div>
+          </div>
+
+          <div class="form-controls">
+            <span class="form-label" id="depth-label">Scan Depth</span>
+            <div class="pill-group" role="radiogroup" aria-labelledby="depth-label">
+              <input type="radio" name="scan-depth" id="depth-0" value="0" checked />
+              <label for="depth-0" title="Scan only the given URL (faster)">0 — Single page</label>
+              <input type="radio" name="scan-depth" id="depth-1" value="1" />
+              <label for="depth-1" title="Scan the URL and up to 10 internal links (slower)">1 — Follow links</label>
             </div>
           </div>
         </form>

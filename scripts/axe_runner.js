@@ -46,6 +46,7 @@ if (!url) {
 
 // Map WCAG level to axe tag sets
 const tagMap = {
+  A:   ['wcag2a', 'wcag21a', 'best-practice'],
   AA:  ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'best-practice'],
   AAA: ['wcag2a', 'wcag2aa', 'wcag2aaa', 'wcag21a', 'wcag21aa', 'wcag21aaa', 'best-practice'],
 };
@@ -99,6 +100,26 @@ const tags = tagMap[wcagLevel.toUpperCase()] || tagMap['AA'];
           reporter: 'v2',
         });
       }, tags);
+
+    // Re-run axe with raw reporter for violated rules to get total tested node
+    // counts (v2 reporter only reports failing nodes for violated rules).
+    const violatedRuleIds = results.violations.map(v => v.id);
+    let ruleNodeTotals = {};
+    if (violatedRuleIds.length > 0) {
+      try {
+        ruleNodeTotals = await page.evaluate(async (ids) => {
+          const raw = await axe.run(document, {
+            runOnly: { type: 'rule', values: ids },
+            reporter: 'raw',
+          });
+          const totals = {};
+          for (const rule of raw) {
+            totals[rule.id] = rule.nodes ? rule.nodes.length : 0;
+          }
+          return totals;
+        }, violatedRuleIds);
+      } catch (_) { /* raw reporter unavailable — fallback to fail-only counts */ }
+    }
 
     // ---------- Custom Checks ----------
     const custom = await page.evaluate(() => {
@@ -318,7 +339,15 @@ const colorCheck = await page.evaluate(() => {
   }
   const uniqueSelectors = Array.from(new Set(cssRules));
   uniqueSelectors.forEach(sel => {
-    document.querySelectorAll(sel).forEach(el => {
+    let elements;
+    try {
+      elements = document.querySelectorAll(sel);
+    } catch (e) {
+      // Skip selectors that are valid CSS but not valid for querySelectorAll
+      // (e.g. complex pseudo-class combinations found in third-party stylesheets)
+      return;
+    }
+    elements.forEach(el => {
       // Heuristic: no textual or iconic indicator within the element
       const hasIcon = el.querySelector('svg, img, [role="img"]');
       const hasText = el.textContent.trim().length > 0;
@@ -1268,11 +1297,20 @@ const contentOnHoverCheck = await (async () => {
       console.error('screenshot failed:', e.message);
     }
 
+    // Compute passing node counts for violated rules (total - failing)
+    const violatedPassEntries = results.violations
+      .map(v => ({
+        id: v.id,
+        description: '',
+        nodeCount: Math.max(0, (ruleNodeTotals[v.id] || 0) - v.nodes.length),
+      }))
+      .filter(p => p.nodeCount > 0);
+
     const merged = {
       url: results.url,
       violations: violationsWithBBox,
-      passes: results.passes.map(p => ({ id: p.id, description: p.description })).concat(mergedCustom.passes),
-      incomplete: results.incomplete.map(i => ({ id: i.id, description: i.description })).concat(mergedCustom.incomplete),
+      passes: results.passes.map(p => ({ id: p.id, description: p.description, nodeCount: p.nodes ? p.nodes.length : 0 })).concat(mergedCustom.passes.map(p => ({ ...p, nodeCount: p.nodeCount || 1 }))).concat(violatedPassEntries),
+      incomplete: results.incomplete.map(i => ({ id: i.id, description: i.description, nodeCount: i.nodes ? i.nodes.length : 0 })).concat(mergedCustom.incomplete.map(i => ({ ...i, nodeCount: i.nodeCount || 0 }))),
       links: extractedLinks,
       screenshot: screenshotB64,
     };

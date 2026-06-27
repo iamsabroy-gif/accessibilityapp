@@ -1,0 +1,1031 @@
+openapi: "3.0.3"
+
+info:
+  title: Web Accessibility Scanner API
+  version: "1.0.0"
+  description: |
+    WCAG 2.1 accessibility scanning API powered by axe-core (Puppeteer/Node.js) and a
+    Go backend.  The scanner runs headless Chromium, executes axe-core plus 22+ custom
+    WCAG checks, and returns structured violation / pass / incomplete data with a
+    penalty-based accessibility score (0–100).
+
+    ## Authentication
+    Most endpoints require a **Bearer JWT** in the `Authorization` header.
+    Obtain a token from `POST /api/v1/token` (server-to-server, requires shared secret)
+    or `GET /api/v1/session` (public, short-lived guest token for frontend use).
+
+    ## Rate limiting
+    10 requests per minute per IP address.
+
+    ## SSRF protection
+    Scanning private/internal addresses (localhost, 127.x, 10.x, 192.168.x, 172.16.x,
+    ::1) is blocked by default unless `ALLOW_PRIVATE_SCANS=true` is set on the server.
+
+servers:
+  - url: https://{host}/api/v1
+    description: Production / staging
+    variables:
+      host:
+        default: your-deployment.example.com
+
+tags:
+  - name: Scan
+    description: Accessibility scan and scoring endpoints
+  - name: Auth
+    description: JWT token management
+  - name: System
+    description: Health, info, and server management
+
+# ─────────────────────────────────────────────────────────────────────────────
+# PATHS
+# ─────────────────────────────────────────────────────────────────────────────
+paths:
+
+  # ── SCAN ───────────────────────────────────────────────────────────────────
+  /scan:
+    post:
+      tags: [Scan]
+      summary: Run a full accessibility scan
+      description: |
+        Launches a headless Chromium browser, navigates to `url`, injects axe-core,
+        runs all mapped WCAG checks (axe-core rules + 22 custom checks), and returns
+        the full `ScanResult` payload.
+
+        **Scan depth**
+        - `depth: 0` (default) — scans only the given URL.
+        - `depth: 1` — also scans up to 10 same-origin embedded links discovered on
+          the page; results appear in `embedded_results`.
+
+        **Visual report**
+        Set `visual_report: true` to include a self-contained HTML report in
+        `visual_report_html`.
+
+        **Timeout** — the server enforces a 180 s scan timeout.
+      operationId: postScan
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ScanRequest"
+            examples:
+              minimal:
+                summary: Minimal — URL only
+                value:
+                  url: "https://example.com"
+              full:
+                summary: Full options
+                value:
+                  url: "https://example.com/app"
+                  wcag_level: "AAA"
+                  depth: 1
+                  visual_report: true
+      responses:
+        "200":
+          description: Scan completed successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ScanResult"
+              example:
+                url: "https://example.com"
+                scanned_at: "2026-06-26T10:30:00Z"
+                duration_ms: 4820
+                summary:
+                  violations: 3
+                  passes: 41
+                  incomplete: 2
+                  wcag_level: "AA"
+                  score: 75
+                  grade: "B"
+                  compliance_pct: 93.18
+                violations:
+                  - id: "image-alt"
+                    impact: "critical"
+                    description: "Ensures <img> elements have alternate text or a role of none or presentation"
+                    help: "Images must have alternate text"
+                    help_url: "https://dequeuniversity.com/rules/axe/4.9/image-alt"
+                    tags: ["wcag2a", "wcag111", "section508"]
+                    violationIndex: 1
+                    nodes:
+                      - html: "<img src=\"hero.png\">"
+                        target: ["img[src$='hero.png']"]
+                        failure_summary: "Fix any of the following: Element does not have an alt attribute"
+                        bbox:
+                          x: 0
+                          y: 120
+                          width: 1200
+                          height: 400
+                    dev_suggestion:
+                      title: "Add descriptive alt text to the image"
+                      fix_steps:
+                        - "Add an alt attribute with a concise description of the image."
+                        - "If the image is decorative, use alt=\"\" and role=\"presentation\"."
+                      code_before: "<img src=\"hero.png\">"
+                      code_after: "<img src=\"hero.png\" alt=\"Team collaborating around a whiteboard\">"
+                      language: "html"
+                passes: ["bypass", "document-title", "html-has-lang"]
+                passes_guidelines: ["2.4.1", "2.4.2", "3.1.1"]
+                violation_guidelines: ["1.1.1"]
+                incomplete: ["color-contrast"]
+                incomplete_guidelines: ["1.4.3"]
+                screenshot: "iVBORw0KGgoAAAANSUhEUgAA..."
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  # ── SCORE ──────────────────────────────────────────────────────────────────
+  /score:
+    post:
+      tags: [Scan]
+      summary: Run a scan and return score breakdown only
+      description: |
+        Identical scan pipeline to `POST /scan` but returns a compact `ScoreReport`
+        instead of the full violation list.  Useful for dashboards and CI gates.
+
+        **Scoring model**
+        | Impact   | Penalty per violation |
+        |----------|-----------------------|
+        | critical | −20                   |
+        | serious  | −10                   |
+        | moderate | −5                    |
+        | minor    | −2                    |
+
+        Score = max(0, 100 − Σ penalties).
+        Grade: A ≥ 90 · B ≥ 75 · C ≥ 40 · D ≥ 25 · F < 25.
+      operationId: postScore
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ScanRequest"
+            example:
+              url: "https://example.com"
+              wcag_level: "AA"
+      responses:
+        "200":
+          description: Score report returned successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ScoreReport"
+              example:
+                url: "https://example.com"
+                wcag_level: "AA"
+                score: 75
+                grade: "B"
+                compliance_pct: 93.18
+                total_violations: 3
+                total_passes: 41
+                total_penalty: 25
+                breakdown:
+                  critical:
+                    count: 1
+                    penalty_per_issue: 20
+                    total_penalty: 20
+                    issues: ["image-alt"]
+                  serious:
+                    count: 0
+                    penalty_per_issue: 10
+                    total_penalty: 0
+                  moderate:
+                    count: 1
+                    penalty_per_issue: 5
+                    total_penalty: 5
+                    issues: ["color-contrast"]
+                  minor:
+                    count: 0
+                    penalty_per_issue: 2
+                    total_penalty: 0
+                recommendation: >
+                  Good score, but 1 serious violation needs urgent attention to
+                  improve accessibility for assistive technology users.
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  # ── TOKEN ──────────────────────────────────────────────────────────────────
+  /token:
+    post:
+      tags: [Auth]
+      summary: Issue a JWT (server-to-server)
+      description: |
+        Exchange the shared server secret for a signed HS256 JWT valid for **30 minutes**.
+        Intended for server-to-server integrations where the caller already holds the
+        `JWT_SECRET`.  For frontend / public use, prefer `GET /session`.
+      operationId: postToken
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TokenRequest"
+            examples:
+              secret:
+                summary: Using secret field
+                value:
+                  secret: "my-server-secret"
+              client_secret:
+                summary: Using client_secret alias
+                value:
+                  client_secret: "my-server-secret"
+      responses:
+        "200":
+          description: JWT issued
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TokenResponse"
+              example:
+                token: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          description: Invalid secret
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error: "invalid secret"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  # ── SESSION ────────────────────────────────────────────────────────────────
+  /session:
+    get:
+      tags: [Auth]
+      summary: Issue a guest JWT (public, no secret required)
+      description: |
+        Issues a short-lived guest JWT (**20 minutes**) without requiring the server
+        secret.  Designed for the built-in frontend SPA — the browser calls this on
+        page load to obtain a token it can use for `/scan` requests.
+      operationId: getSession
+      security: []
+      responses:
+        "200":
+          description: Guest JWT issued
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SessionResponse"
+              example:
+                token: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+                expires_in: 1200
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  # ── ADMIN VERIFY ───────────────────────────────────────────────────────────
+  /admin/verify:
+    post:
+      tags: [Auth]
+      summary: Verify admin password
+      description: |
+        Checks the submitted password against the server-side `ADMIN_PASSWORD`
+        environment variable.  Returns 200 if correct, 401 if not.  Used by the
+        frontend to gate admin-only UI sections.
+      operationId: postAdminVerify
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AdminVerifyRequest"
+            example:
+              password: "admin-password"
+      responses:
+        "200":
+          description: Password correct
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: "ok"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          description: Incorrect password
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error: "incorrect admin password"
+        "503":
+          description: Admin mode not configured on server
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  # ── SECRET (dev/ops) ───────────────────────────────────────────────────────
+  /secret:
+    post:
+      tags: [System]
+      summary: Update the JWT secret at runtime
+      description: |
+        Replaces the active JWT signing secret without restarting the server.
+        **Protected** — requires a valid Bearer token signed with the *current* secret.
+      operationId: postSecret
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SecretRequest"
+            example:
+              secret: "new-signing-secret"
+      responses:
+        "200":
+          description: Secret updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: "secret updated"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+    get:
+      tags: [System]
+      summary: Retrieve the active JWT secret (development/ops only)
+      description: |
+        Returns the active JWT signing secret.  **Never expose this endpoint publicly.**
+        Protected by Bearer auth.
+      operationId: getSecret
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Active secret returned
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  secret:
+                    type: string
+                    example: "my-current-secret"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  # ── HEALTH ─────────────────────────────────────────────────────────────────
+  /health:
+    get:
+      tags: [System]
+      summary: Health check
+      description: Returns server status, current UTC time, and API version. No auth required.
+      operationId: getHealth
+      security: []
+      responses:
+        "200":
+          description: Server is healthy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthResponse"
+              example:
+                status: "ok"
+                time: "2026-06-26T10:30:00Z"
+                version: "1.0.0"
+
+  # ── INFO ───────────────────────────────────────────────────────────────────
+  /:
+    get:
+      tags: [System]
+      summary: API information
+      description: Returns API name, version, description, and available endpoint list. No auth required.
+      operationId: getInfo
+      security: []
+      responses:
+        "200":
+          description: API metadata
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InfoResponse"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# COMPONENTS
+# ─────────────────────────────────────────────────────────────────────────────
+components:
+
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: |
+        HS256-signed JWT.  Obtain via `POST /token` (30 min) or `GET /session` (20 min).
+        Include as `Authorization: Bearer <token>`.
+
+  # ── REQUEST SCHEMAS ─────────────────────────────────────────────────────────
+  schemas:
+
+    ScanRequest:
+      type: object
+      required: [url]
+      properties:
+        url:
+          type: string
+          format: uri
+          description: |
+            Fully-qualified HTTP or HTTPS URL to scan.  Private/internal addresses
+            are blocked by default (localhost, 127.x, 10.x, 192.168.x, 172.16.x, ::1).
+          example: "https://example.com/app"
+        wcag_level:
+          type: string
+          enum: ["AA", "AAA"]
+          default: "AA"
+          description: |
+            WCAG 2.1 conformance level to test against.
+            - `AA` — tests all A + AA success criteria (default).
+            - `AAA` — tests A + AA + AAA criteria.
+          example: "AA"
+        depth:
+          type: integer
+          enum: [0, 1]
+          default: 0
+          description: |
+            Link-following depth.
+            - `0` — scan the given URL only (default).
+            - `1` — also scan up to 10 same-origin links discovered on the page;
+              results appear in `embedded_results`.
+          example: 0
+        visual_report:
+          type: boolean
+          default: false
+          description: |
+            When `true`, the response includes `visual_report_html` — a self-contained
+            HTML accessibility report with annotated screenshots.
+          example: false
+
+    TokenRequest:
+      type: object
+      description: |
+        Either `secret` or `client_secret` must be provided (both are accepted for
+        backwards compatibility; `secret` takes precedence).
+      properties:
+        secret:
+          type: string
+          description: Shared server JWT secret (matches `JWT_SECRET` env var).
+          example: "my-server-secret"
+        client_secret:
+          type: string
+          description: Alias for `secret`.
+          example: "my-server-secret"
+
+    AdminVerifyRequest:
+      type: object
+      required: [password]
+      properties:
+        password:
+          type: string
+          description: Admin password to verify (matches `ADMIN_PASSWORD` env var).
+          example: "admin-password"
+
+    SecretRequest:
+      type: object
+      required: [secret]
+      properties:
+        secret:
+          type: string
+          minLength: 1
+          description: New JWT signing secret to set at runtime.
+          example: "new-signing-secret"
+
+    # ── RESPONSE SCHEMAS ───────────────────────────────────────────────────────
+
+    ScanResult:
+      type: object
+      description: Full response payload for `POST /scan`.
+      required: [url, scanned_at, duration_ms, summary, violations]
+      properties:
+        url:
+          type: string
+          format: uri
+          description: The URL that was scanned.
+          example: "https://example.com"
+        scanned_at:
+          type: string
+          format: date-time
+          description: UTC timestamp when the scan completed (RFC 3339).
+          example: "2026-06-26T10:30:00Z"
+        duration_ms:
+          type: integer
+          format: int64
+          description: Total scan wall-clock duration in milliseconds.
+          example: 4820
+        summary:
+          $ref: "#/components/schemas/Summary"
+        violations:
+          type: array
+          description: List of detected accessibility violations.
+          items:
+            $ref: "#/components/schemas/Violation"
+        passes:
+          type: array
+          description: Rule IDs that passed (no violations found).
+          items:
+            type: string
+          example: ["bypass", "document-title", "html-has-lang"]
+        passes_guidelines:
+          type: array
+          description: Deduplicated, sorted WCAG SC numbers covered by passing rules.
+          items:
+            type: string
+          example: ["2.4.1", "2.4.2", "3.1.1"]
+        violation_guidelines:
+          type: array
+          description: Deduplicated, sorted WCAG SC numbers that have at least one violation.
+          items:
+            type: string
+          example: ["1.1.1", "1.4.3"]
+        incomplete:
+          type: array
+          description: Rule IDs that require manual review (axe "needs review" + custom incomplete).
+          items:
+            type: string
+          example: ["color-contrast", "sensory-characteristics"]
+        incomplete_guidelines:
+          type: array
+          description: WCAG SC numbers associated with incomplete checks.
+          items:
+            type: string
+          example: ["1.3.3", "1.4.3"]
+        embedded_results:
+          type: array
+          description: |
+            Scan results for linked pages discovered when `depth: 1`.
+            Each entry is a full `ScanResult` for one embedded URL.
+            Only present when `depth: 1` was requested.
+          items:
+            $ref: "#/components/schemas/ScanResult"
+        page_html:
+          type: string
+          description: Raw HTML source of the scanned page (omitted by default).
+          example: "<!DOCTYPE html><html lang=\"en\">...</html>"
+        visual_report_path:
+          type: string
+          description: Server-side filesystem path to the generated HTML report (internal use).
+        visual_report_html:
+          type: string
+          description: |
+            Self-contained HTML accessibility report with annotated screenshots.
+            Only present when `visual_report: true` was requested.
+        screenshot:
+          type: string
+          description: |
+            Base64-encoded PNG of the full-page screenshot taken during the scan.
+            Decode with `atob()` (browser) or `base64.StdEncoding.DecodeString` (Go).
+          example: "iVBORw0KGgoAAAANSUhEUgAA..."
+
+    Summary:
+      type: object
+      description: Aggregated counts and accessibility score for the scan.
+      required: [violations, passes, incomplete, wcag_level, score, grade, compliance_pct]
+      properties:
+        violations:
+          type: integer
+          description: Total number of violation instances (not unique rule IDs).
+          example: 3
+        passes:
+          type: integer
+          description: Total number of passing rule checks.
+          example: 41
+        incomplete:
+          type: integer
+          description: Number of checks requiring manual review.
+          example: 2
+        wcag_level:
+          type: string
+          enum: ["AA", "AAA"]
+          description: WCAG conformance level used for the scan.
+          example: "AA"
+        score:
+          type: integer
+          minimum: 0
+          maximum: 100
+          description: |
+            Penalty-based accessibility score (0–100, higher is better).
+            Starts at 100; each violation deducts: critical −20, serious −10,
+            moderate −5, minor −2.  Clamped to 0.
+          example: 75
+        grade:
+          type: string
+          enum: ["A", "B", "C", "D", "F"]
+          description: |
+            Letter grade derived from score:
+            A ≥ 90 · B ≥ 75 · C ≥ 40 · D ≥ 25 · F < 25.
+          example: "B"
+        compliance_pct:
+          type: number
+          format: double
+          minimum: 0
+          maximum: 100
+          description: |
+            `passes / (passes + violations) × 100`.
+            Reflects what fraction of tested checks passed.
+          example: 93.18
+
+    Violation:
+      type: object
+      description: A single WCAG accessibility violation detected on the page.
+      required: [id, impact, description, help, help_url, tags, nodes]
+      properties:
+        id:
+          type: string
+          description: |
+            Rule identifier.  axe-core rules use kebab-case (e.g. `image-alt`).
+            Custom checks use prefixed IDs (e.g. `video-captions-present`,
+            `color-only-indicator`, `focus-visible`).
+          example: "image-alt"
+        impact:
+          type: string
+          enum: ["critical", "serious", "moderate", "minor"]
+          description: |
+            Severity of the violation.
+            - `critical` — blocks assistive technology users entirely.
+            - `serious` — significantly impairs use.
+            - `moderate` — causes difficulty.
+            - `minor` — inconvenience.
+          example: "critical"
+        description:
+          type: string
+          description: Human-readable description of what was checked.
+          example: "Ensures <img> elements have alternate text or a role of none or presentation"
+        help:
+          type: string
+          description: Short remediation summary.
+          example: "Images must have alternate text"
+        help_url:
+          type: string
+          format: uri
+          description: Link to detailed rule documentation (Deque University or WAI).
+          example: "https://dequeuniversity.com/rules/axe/4.9/image-alt"
+        tags:
+          type: array
+          description: |
+            Applicable WCAG / axe tags (e.g. `wcag2a`, `wcag111`, `best-practice`,
+            `wcag122`, `cat.text-alternatives`).
+          items:
+            type: string
+          example: ["wcag2a", "wcag111", "section508", "cat.text-alternatives"]
+        nodes:
+          type: array
+          description: One entry per DOM element that triggered this violation.
+          items:
+            $ref: "#/components/schemas/Node"
+        violationIndex:
+          type: integer
+          description: 1-based index used for visual overlay markers in the HTML report.
+          example: 1
+        dev_suggestion:
+          $ref: "#/components/schemas/DevSuggestion"
+
+    Node:
+      type: object
+      description: A specific DOM element that triggered a violation.
+      required: [html, target]
+      properties:
+        html:
+          type: string
+          description: Serialised opening tag of the offending element.
+          example: "<img src=\"hero.png\">"
+        target:
+          type: array
+          description: CSS selector path(s) that uniquely identify the element on the page.
+          items:
+            type: string
+          example: ["img[src$='hero.png']"]
+        failure_summary:
+          type: string
+          description: |
+            Human-readable explanation of why this element failed, including which
+            fix conditions were evaluated.
+          example: "Fix any of the following: Element does not have an alt attribute"
+        bbox:
+          $ref: "#/components/schemas/BBox"
+
+    BBox:
+      type: object
+      description: |
+        Absolute pixel coordinates of the element's bounding box on the full-page
+        screenshot.  Use with `screenshot` (base64 PNG) to highlight the element.
+      required: [x, y, width, height]
+      properties:
+        x:
+          type: integer
+          description: Left edge in pixels from the top-left of the full-page screenshot.
+          example: 0
+        y:
+          type: integer
+          description: Top edge in pixels from the top-left of the full-page screenshot.
+          example: 120
+        width:
+          type: integer
+          description: Element width in pixels.
+          example: 1200
+        height:
+          type: integer
+          description: Element height in pixels.
+          example: 400
+
+    DevSuggestion:
+      type: object
+      description: Developer-facing remediation guidance auto-generated for a violation.
+      required: [title, fix_steps]
+      properties:
+        title:
+          type: string
+          description: One-line description of the required fix.
+          example: "Add descriptive alt text to the image"
+        fix_steps:
+          type: array
+          description: Ordered list of remediation steps.
+          items:
+            type: string
+          example:
+            - "Add an alt attribute with a concise description of the image."
+            - "If the image is decorative, use alt=\"\" and role=\"presentation\"."
+        code_before:
+          type: string
+          description: Representative non-compliant code snippet.
+          example: "<img src=\"hero.png\">"
+        code_after:
+          type: string
+          description: Corrected code snippet.
+          example: "<img src=\"hero.png\" alt=\"Team collaborating around a whiteboard\">"
+        language:
+          type: string
+          enum: ["html", "css", "js"]
+          description: Language of the code snippets, for syntax-highlighting purposes.
+          example: "html"
+
+    ScoreReport:
+      type: object
+      description: Compact scoring response returned by `POST /score`.
+      required: [url, wcag_level, score, grade, compliance_pct, total_violations,
+                 total_passes, total_penalty, breakdown, recommendation]
+      properties:
+        url:
+          type: string
+          format: uri
+          example: "https://example.com"
+        wcag_level:
+          type: string
+          enum: ["AA", "AAA"]
+          example: "AA"
+        score:
+          type: integer
+          minimum: 0
+          maximum: 100
+          description: Penalty-based score (0–100).
+          example: 75
+        grade:
+          type: string
+          enum: ["A", "B", "C", "D", "F"]
+          example: "B"
+        compliance_pct:
+          type: number
+          format: double
+          description: "passes / (passes + violations) × 100."
+          example: 93.18
+        total_violations:
+          type: integer
+          description: Total count of violation instances across all rule checks.
+          example: 3
+        total_passes:
+          type: integer
+          description: Total count of passing rule checks.
+          example: 41
+        total_penalty:
+          type: integer
+          description: Sum of all deducted penalty points (100 − total_penalty = score, clamped to 0).
+          example: 25
+        breakdown:
+          type: object
+          description: Per-impact-level violation statistics.
+          properties:
+            critical:
+              $ref: "#/components/schemas/ImpactBucket"
+            serious:
+              $ref: "#/components/schemas/ImpactBucket"
+            moderate:
+              $ref: "#/components/schemas/ImpactBucket"
+            minor:
+              $ref: "#/components/schemas/ImpactBucket"
+          additionalProperties:
+            $ref: "#/components/schemas/ImpactBucket"
+        recommendation:
+          type: string
+          description: |
+            Auto-generated human-readable recommendation based on score and violation
+            breakdown.
+          example: >
+            Good score, but 1 serious violation needs urgent attention to improve
+            accessibility for assistive technology users.
+
+    ImpactBucket:
+      type: object
+      description: Statistics for one impact level within a `ScoreReport`.
+      required: [count, penalty_per_issue, total_penalty]
+      properties:
+        count:
+          type: integer
+          description: Number of violations at this impact level.
+          example: 1
+        penalty_per_issue:
+          type: integer
+          description: Points deducted per violation at this impact level.
+          example: 20
+        total_penalty:
+          type: integer
+          description: count × penalty_per_issue.
+          example: 20
+        issues:
+          type: array
+          description: Rule IDs of violations at this impact level.
+          items:
+            type: string
+          example: ["image-alt"]
+
+    TokenResponse:
+      type: object
+      required: [token]
+      properties:
+        token:
+          type: string
+          description: Signed HS256 JWT, valid for 30 minutes.
+          example: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+
+    SessionResponse:
+      type: object
+      required: [token, expires_in]
+      properties:
+        token:
+          type: string
+          description: Signed HS256 guest JWT.
+          example: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+        expires_in:
+          type: integer
+          description: Token validity in seconds (1200 = 20 minutes).
+          example: 1200
+
+    HealthResponse:
+      type: object
+      required: [status, time, version]
+      properties:
+        status:
+          type: string
+          example: "ok"
+        time:
+          type: string
+          format: date-time
+          description: Current server UTC time (RFC 3339).
+          example: "2026-06-26T10:30:00Z"
+        version:
+          type: string
+          example: "1.0.0"
+
+    InfoResponse:
+      type: object
+      properties:
+        name:
+          type: string
+          example: "Web Accessibility API"
+        version:
+          type: string
+          example: "1.0.0"
+        description:
+          type: string
+          example: "WCAG accessibility scanning API powered by axe-core"
+        endpoints:
+          type: array
+          items:
+            type: string
+          example:
+            - "POST /api/v1/scan"
+            - "POST /api/v1/score"
+            - "GET  /api/v1/health"
+            - "GET  /api/v1/"
+            - "POST /api/v1/token"
+            - "GET  /api/v1/session"
+            - "POST /api/v1/admin/verify"
+            - "POST /api/v1/secret"
+            - "GET  /api/v1/secret"
+
+    ErrorResponse:
+      type: object
+      description: Standard error envelope returned for 4xx and 5xx responses.
+      required: [error]
+      properties:
+        error:
+          type: string
+          description: Short error message.
+          example: "url is required"
+        details:
+          type: string
+          description: Extended error context (e.g. validation detail or Go error string).
+          example: "only http and https URLs are allowed"
+
+  # ── REUSABLE RESPONSES ────────────────────────────────────────────────────
+  responses:
+
+    BadRequest:
+      description: |
+        Invalid request body or parameters.
+        Common causes: missing `url`, malformed URL, unsupported `wcag_level` value.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+          examples:
+            missing_url:
+              value:
+                error: "url is required"
+            invalid_url:
+              value:
+                error: "invalid url"
+                details: "only http and https URLs are allowed"
+            invalid_wcag_level:
+              value:
+                error: "wcag_level must be 'AA' or 'AAA'"
+
+    Unauthorized:
+      description: Missing or invalid JWT Bearer token.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+          example:
+            error: "unauthorized"
+            details: "missing or invalid Authorization header"
+
+    Forbidden:
+      description: Scanning the target URL is not permitted (SSRF protection).
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+          example:
+            error: "scanning private/internal addresses is not allowed"
+
+    TooManyRequests:
+      description: Rate limit exceeded (10 requests per minute per IP).
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+          example:
+            error: "too many requests"
+
+    InternalError:
+      description: |
+        Unexpected server error.  Common causes: Puppeteer/Node.js crash, network
+        timeout reaching the target URL (180 s limit), or misconfigured server.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+          examples:
+            scan_failed:
+              value:
+                error: "scan failed"
+                details: "Navigation timeout of 180000 ms exceeded"
+            jwt_not_configured:
+              value:
+                error: "JWT secret is not configured on the server"

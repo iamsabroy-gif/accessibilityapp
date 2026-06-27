@@ -1,6 +1,7 @@
 package api
 
 import (
+    "context"
     "encoding/json"
     "fmt"
     "net/http"
@@ -58,8 +59,8 @@ func (h *Handler) Scan(w http.ResponseWriter, r *http.Request) {
     wcagLevel := h.WCAGLevel
     if req.WCAGLevel != "" {
         req.WCAGLevel = strings.ToUpper(req.WCAGLevel)
-        if req.WCAGLevel != "AA" && req.WCAGLevel != "AAA" {
-            writeError(w, http.StatusBadRequest, "wcag_level must be 'AA' or 'AAA'", "")
+        if req.WCAGLevel != "A" && req.WCAGLevel != "AA" && req.WCAGLevel != "AAA" {
+            writeError(w, http.StatusBadRequest, "wcag_level must be 'A', 'AA', or 'AAA'", "")
             return
         }
         wcagLevel = req.WCAGLevel
@@ -69,9 +70,10 @@ func (h *Handler) Scan(w http.ResponseWriter, r *http.Request) {
         writeError(w, http.StatusForbidden, "scanning private/internal addresses is not allowed", "")
         return
     }
-    ctx := r.Context()
-    h.Logger.Info("starting scan", zap.String("url", req.URL), zap.String("wcag", wcagLevel))
-    result, err := h.Scanner.Scan(ctx, req.URL, wcagLevel, req.Depth)
+	ctx, cancel := context.WithTimeout(r.Context(), h.ScanTimeout)
+	defer cancel()
+	h.Logger.Info("starting scan", zap.String("url", req.URL), zap.String("wcag", wcagLevel))
+	result, err := h.Scanner.Scan(ctx, req.URL, wcagLevel, req.Depth)
     if err != nil {
         h.Logger.Error("scan failed", zap.String("url", req.URL), zap.Error(err))
         writeError(w, http.StatusInternalServerError, "scan failed", err.Error())
@@ -228,15 +230,16 @@ func (h *Handler) ScoreOnly(w http.ResponseWriter, r *http.Request) {
     wcagLevel := h.WCAGLevel
     if req.WCAGLevel != "" {
         req.WCAGLevel = strings.ToUpper(req.WCAGLevel)
-        if req.WCAGLevel != "AA" && req.WCAGLevel != "AAA" {
-            writeError(w, http.StatusBadRequest, "wcag_level must be 'AA' or 'AAA'", "")
+        if req.WCAGLevel != "A" && req.WCAGLevel != "AA" && req.WCAGLevel != "AAA" {
+            writeError(w, http.StatusBadRequest, "wcag_level must be 'A', 'AA', or 'AAA'", "")
             return
         }
         wcagLevel = req.WCAGLevel
     }
-    ctx := r.Context()
-    h.Logger.Info("starting score-only scan", zap.String("url", req.URL), zap.String("wcag", wcagLevel))
-    result, err := h.Scanner.Scan(ctx, req.URL, wcagLevel, req.Depth)
+	ctx, cancel := context.WithTimeout(r.Context(), h.ScanTimeout)
+	defer cancel()
+	h.Logger.Info("starting score-only scan", zap.String("url", req.URL), zap.String("wcag", wcagLevel))
+	result, err := h.Scanner.Scan(ctx, req.URL, wcagLevel, req.Depth)
     if err != nil {
         h.Logger.Error("scan failed", zap.String("url", req.URL), zap.Error(err))
         writeError(w, http.StatusInternalServerError, "scan failed", err.Error())

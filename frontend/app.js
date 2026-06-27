@@ -36,7 +36,15 @@ const $ = (id) => document.getElementById(id);
 
 // ─── Utility ──────────────────────────────────────────────────
 function apiBase() {
-  return (localStorage.getItem(LS_KEY_API_BASE) || DEFAULT_API_BASE).replace(/\/$/, '');
+  const stored = localStorage.getItem(LS_KEY_API_BASE);
+  if (stored) return stored.replace(/\/$/, '');
+  
+  const host = window.location.hostname;
+  const proto = window.location.protocol;
+  if (host === 'localhost' || host === '127.0.0.1' || host.startsWith('192.168.') || proto === 'file:') {
+    return host ? window.location.origin : 'http://localhost:8080';
+  }
+  return DEFAULT_API_BASE;
 }
 
 function showError(msg, clickHandler) {
@@ -115,9 +123,11 @@ function scheduleTokenRenewal() {
 }
 
 // ─── Scan ──────────────────────────────────────────────────────
-async function runScan(url, wcagLevel) {
+async function runScan(url, wcagLevel, depth = 0) {
   setView('loading');
   $('loading-url').textContent = url;
+  const depthMsg = $('loading-depth-msg');
+  if (depthMsg) depthMsg.textContent = depth === 1 ? 'Following internal links…' : '';
   hideError();
 
   const ok = await ensureToken();
@@ -130,7 +140,7 @@ async function runScan(url, wcagLevel) {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${state.token}`,
       },
-      body: JSON.stringify({ url, wcag_level: wcagLevel, depth: 0 }),
+      body: JSON.stringify({ url, wcag_level: wcagLevel, depth }),
     });
 
     if (res.status === 401) {
@@ -140,7 +150,7 @@ async function runScan(url, wcagLevel) {
       state.token = null;
       const retried = await ensureToken();
       if (!retried) { setView('hero'); return; }
-      return runScan(url, wcagLevel);
+      return runScan(url, wcagLevel, depth);
     }
 
     const data = await res.json();
@@ -551,8 +561,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const url = urlInput?.value.trim();
     if (!url) { showError('Please enter a URL to scan.'); return; }
     const wcagLevel = document.querySelector('input[name="wcag-level"]:checked')?.value || 'AA';
+    const depth     = parseInt(document.querySelector('input[name="scan-depth"]:checked')?.value ?? '0', 10);
     scanBtn.disabled = true;
-    await runScan(url, wcagLevel);
+    await runScan(url, wcagLevel, depth);
     scanBtn.disabled = false;
   });
 

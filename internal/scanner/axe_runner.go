@@ -55,6 +55,7 @@ type axeBBox struct {
 type axeRule struct {
 	ID          string `json:"id"`
 	Description string `json:"description"`
+	NodeCount   int    `json:"nodeCount"`
 }
 
 // AxeRunner implements Scanner using axe-core via a Node.js subprocess.
@@ -136,6 +137,17 @@ func (a *AxeRunner) Scan(ctx context.Context, url string, wcagLevel string, dept
             }
         }
         result.EmbeddedResults = embedded
+
+        // Compute site-level AudioEye score across all pages
+        if result.AudioEye != nil && len(embedded) > 0 {
+            allScores := []int{result.AudioEye.Score}
+            for _, er := range embedded {
+                if er.AudioEye != nil {
+                    allScores = append(allScores, er.AudioEye.Score)
+                }
+            }
+            result.AudioEye.SiteScore = scoring.CalculateAudioEyeSite(allScores, nil)
+        }
     }
 
     return result, nil
@@ -199,9 +211,11 @@ func mapToScanResult(raw axeRawResult, url, wcagLevel string, durationMs int64) 
 		violations = append(violations, violation)
 	}
 
+	passRules := make([]models.PassRule, 0, len(raw.Passes))
 	passIDs := make([]string, 0, len(raw.Passes))
 	for _, p := range raw.Passes {
 		passIDs = append(passIDs, p.ID)
+		passRules = append(passRules, models.PassRule{ID: p.ID, NodeCount: p.NodeCount})
 	}
 	incompleteIDs := make([]string, 0, len(raw.Incomplete))
 	for _, i := range raw.Incomplete {
@@ -233,12 +247,18 @@ func mapToScanResult(raw axeRawResult, url, wcagLevel string, durationMs int64) 
 			Grade:           grade,
 			CompliancePct:   compliancePct,
 		},
-		Violations: violations,
-		Passes:     passIDs,
-		Incomplete: incompleteIDs,
+		Violations:  violations,
+		Passes:      passIDs,
+		PassRules:   passRules,
+		Incomplete:  incompleteIDs,
 		EmbeddedResults: nil,
-		Screenshot: raw.Screenshot,
+		Screenshot:  raw.Screenshot,
 	}
+
+	// Compute AudioEye element-level failure-rate score
+	aeResult := scoring.CalculateAudioEye(violations, passRules, models.WCAGMap)
+	result.AudioEye = &aeResult
+	result.Summary.AudioEyeScore = aeResult.Score
 
 	// Populate guideline slices into the result struct
 	result.PassGuidelines = passGuidelines

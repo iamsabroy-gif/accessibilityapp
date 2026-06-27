@@ -1,10 +1,12 @@
 package config
 
 import (
+    "bufio"
     "crypto/rand"
     "encoding/base64"
     "os"
     "strconv"
+    "strings"
     "sync"
 )
 
@@ -87,6 +89,7 @@ func generateRandomSecret(n int) string {
 
 // Load reads configuration from environment variables with sensible defaults.
 func Load() *Config {
+    loadDotEnv()
     secret := getEnv("JWT_SECRET", "")
     if secret == "" {
         // Generate a random secret if none is supplied.
@@ -94,7 +97,7 @@ func Load() *Config {
     }
     return &Config{
         Port:               getEnv("PORT", "8080"),
-        ScanTimeoutSeconds: getEnvInt("SCAN_TIMEOUT_SECONDS", 30),
+        ScanTimeoutSeconds: getEnvInt("SCAN_TIMEOUT_SECONDS", 180),
         WCAGLevel:          getEnv("WCAG_LEVEL", "AA"),
         MaxConcurrentScans: getEnvInt("MAX_CONCURRENT_SCANS", 5),
         JWTSecret:          secret,
@@ -102,6 +105,34 @@ func Load() *Config {
         NodeBin:            getEnv("NODE_BIN", "node"),
         AxeRunnerScript:    getEnv("AXE_RUNNER_SCRIPT", "scripts/axe_runner.js"),
         AllowPrivateScans:  getEnvBool("ALLOW_PRIVATE_SCANS", false),
+    }
+}
+
+func loadDotEnv() {
+    file, err := os.Open(".env")
+    if err != nil {
+        return
+    }
+    defer file.Close()
+
+    scanner := bufio.NewScanner(file)
+    for scanner.Scan() {
+        line := strings.TrimSpace(scanner.Text())
+        if line == "" || strings.HasPrefix(line, "#") {
+            continue
+        }
+        parts := strings.SplitN(line, "=", 2)
+        if len(parts) == 2 {
+            key := strings.TrimSpace(parts[0])
+            val := strings.TrimSpace(parts[1])
+            if (strings.HasPrefix(val, "\"") && strings.HasSuffix(val, "\"")) ||
+                (strings.HasPrefix(val, "'") && strings.HasSuffix(val, "'")) {
+                val = val[1 : len(val)-1]
+            }
+            if os.Getenv(key) == "" {
+                os.Setenv(key, val)
+            }
+        }
     }
 }
 

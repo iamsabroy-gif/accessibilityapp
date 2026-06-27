@@ -18,6 +18,31 @@ type BBox struct {
 	Height int `json:"height"`
 }
 
+// PassRule represents a passing axe rule with its tested node count.
+type PassRule struct {
+	ID        string `json:"id"`
+	NodeCount int    `json:"node_count"`
+}
+
+// SCScore holds per-success-criterion scoring data for the AudioEye methodology.
+type SCScore struct {
+	FailedElements int     `json:"failed_elements"`
+	TestedElements int     `json:"tested_elements"`
+	FailureRate    float64 `json:"failure_rate"`
+	Weight         float64 `json:"weight"`
+	WeightedRate   float64 `json:"weighted_rate"`
+}
+
+// AudioEyeResult holds the AudioEye element-level failure-rate score.
+type AudioEyeResult struct {
+	Score           int                `json:"score"`
+	Grade           string             `json:"grade"`
+	SCBreakdown     map[string]SCScore `json:"sc_breakdown"`
+	SCsEvaluated    int                `json:"scs_evaluated"`
+	WeightedFailure float64            `json:"weighted_failure"`
+	SiteScore       int                `json:"site_score,omitempty"`
+}
+
 // Node represents a specific DOM element that triggered a violation.
 type Node struct {
 	HTML           string   `json:"html"`
@@ -57,6 +82,7 @@ type Summary struct {
 	Score           int     `json:"score"`            // 0–100, higher is better
 	Grade           string  `json:"grade"`            // A, B, C, D, or F
 	CompliancePct   float64 `json:"compliance_pct"`   // passes / (passes + violations) × 100
+	AudioEyeScore   int     `json:"audioeye_score"`
 }
 
 // ScanResult is the full response payload returned after a scan.
@@ -66,7 +92,9 @@ type ScanResult struct {
 	DurationMs int64       `json:"duration_ms"`
 	Summary    Summary     `json:"summary"`
 	Violations []Violation `json:"violations"`
-	Passes               []string    `json:"passes,omitempty"`
+	Passes               []string         `json:"passes,omitempty"`
+	PassRules            []PassRule       `json:"pass_rules,omitempty"`
+	AudioEye             *AudioEyeResult  `json:"audioeye,omitempty"`
 	PassGuidelines       []string    `json:"passes_guidelines,omitempty"`
 	ViolationGuidelines  []string    `json:"violation_guidelines,omitempty"`
 	Incomplete           []string    `json:"incomplete,omitempty"`

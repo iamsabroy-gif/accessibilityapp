@@ -2,6 +2,7 @@ package scoring
 
 import (
 	"fmt"
+	"math"
 
 	"github.com/webaccessibility/server/internal/models"
 )
@@ -32,8 +33,11 @@ type ScoreReport struct {
 	TotalViolations int                    `json:"total_violations"`
 	TotalPasses    int                     `json:"total_passes"`
 	TotalPenalty   int                     `json:"total_penalty"`
-	Breakdown      map[string]ImpactBucket `json:"breakdown"`
-	Recommendation string                  `json:"recommendation"`
+	Breakdown       map[string]ImpactBucket  `json:"breakdown"`
+	Recommendation  string                   `json:"recommendation"`
+	AudioEyeScore   int                      `json:"audioeye_score"`
+	AudioEyeGrade   string                   `json:"audioeye_grade"`
+	AudioEyeDetail  *models.AudioEyeResult   `json:"audioeye_detail,omitempty"`
 }
 
 // Calculate computes an accessibility score (0–100), letter grade,
@@ -87,6 +91,8 @@ func Report(result *models.ScanResult) ScoreReport {
 		totalPenalty += penalty
 	}
 
+	aeResult := CalculateAudioEye(result.Violations, result.PassRules, models.WCAGMap)
+
 	return ScoreReport{
 		URL:             result.URL,
 		WCAGLevel:       result.Summary.Level,
@@ -98,6 +104,9 @@ func Report(result *models.ScanResult) ScoreReport {
 		TotalPenalty:    totalPenalty,
 		Breakdown:       breakdown,
 		Recommendation:  recommendation(result.Summary.Score, result.Violations),
+		AudioEyeScore:   aeResult.Score,
+		AudioEyeGrade:   aeResult.Grade,
+		AudioEyeDetail:  &aeResult,
 	}
 }
 
@@ -141,6 +150,102 @@ func recommendation(score int, violations []models.Violation) string {
 			counts["critical"], counts["serious"],
 		)
 	}
+}
+
+// CalculateAudioEye implements the AudioEye element-level failure-rate scoring methodology.
+func CalculateAudioEye(
+	violations []models.Violation,
+	passRules []models.PassRule,
+	wcagMap map[string][]string,
+) models.AudioEyeResult {
+	type scCounts struct{ failed, tested int }
+	scMap := map[string]*scCounts{}
+
+	for _, v := range violations {
+		scs := wcagMap[v.ID]
+		for _, sc := range scs {
+			if scMap[sc] == nil {
+				scMap[sc] = &scCounts{}
+			}
+			n := len(v.Nodes)
+			scMap[sc].failed += n
+			scMap[sc].tested += n
+		}
+	}
+
+	for _, p := range passRules {
+		scs := wcagMap[p.ID]
+		for _, sc := range scs {
+			if scMap[sc] == nil {
+				scMap[sc] = &scCounts{}
+			}
+			scMap[sc].tested += p.NodeCount
+		}
+	}
+
+	for sc, c := range scMap {
+		if c.tested == 0 {
+			delete(scMap, sc)
+		}
+	}
+
+	n := len(scMap)
+	if n == 0 {
+		return models.AudioEyeResult{Score: 100, Grade: "A", SCsEvaluated: 0}
+	}
+
+	w := 1.0 / float64(n)
+	weightedFailure := 0.0
+	breakdown := map[string]models.SCScore{}
+
+	for sc, c := range scMap {
+		rate := float64(c.failed) / float64(c.tested)
+		wr := w * rate
+		weightedFailure += wr
+		breakdown[sc] = models.SCScore{
+			FailedElements: c.failed,
+			TestedElements: c.tested,
+			FailureRate:    rate,
+			Weight:         w,
+			WeightedRate:   wr,
+		}
+	}
+
+	rawScore := (1.0 - weightedFailure) * 100.0
+	score := int(math.Round(rawScore))
+	if score < 0 {
+		score = 0
+	}
+	if score > 100 {
+		score = 100
+	}
+
+	return models.AudioEyeResult{
+		Score:           score,
+		Grade:           letterGrade(score),
+		SCBreakdown:     breakdown,
+		SCsEvaluated:    n,
+		WeightedFailure: weightedFailure,
+	}
+}
+
+// CalculateAudioEyeSite aggregates page-level AudioEye scores into a
+// pageview-weighted site score. Pass pageviews=nil to weight all pages equally.
+func CalculateAudioEyeSite(pageScores []int, pageviews []int) int {
+	if len(pageScores) == 0 {
+		return 0
+	}
+	totalWeight := 0.0
+	weightedSum := 0.0
+	for i, s := range pageScores {
+		pv := 1
+		if pageviews != nil && i < len(pageviews) {
+			pv = pageviews[i]
+		}
+		weightedSum += float64(s) * float64(pv)
+		totalWeight += float64(pv)
+	}
+	return int(math.Round(weightedSum / totalWeight))
 }
 
 // letterGrade converts a numeric score to a letter grade.
