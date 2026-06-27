@@ -1,0 +1,331 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AccessScan — WCAG Accessibility Scanner</title>
+  <meta name="description" content="Scan any website for WCAG 2.1 accessibility compliance. Get detailed violation reports, impact breakdowns, and an accessibility score powered by axe-core." />
+  <meta name="theme-color" content="#070b18" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+<div id="app">
+
+  <!-- ═══════════════════════════════════════
+       TOPBAR
+  ═══════════════════════════════════════ -->
+  <header id="topbar" role="banner">
+    <div class="topbar-brand">
+      <div class="brand-icon" aria-hidden="true">♿</div>
+      <span>AccessScan</span>
+    </div>
+    <div class="topbar-actions">
+      <!--
+        Hidden admin trigger: click 5× rapidly to open the admin panel.
+        Intentionally invisible to regular users.
+      -->
+      <div
+        id="admin-trigger"
+        role="button"
+        aria-label="Admin settings"
+        tabindex="-1"
+        title=""
+      ></div>
+    </div>
+  </header>
+
+  <!-- ═══════════════════════════════════════
+       HERO / INPUT VIEW
+  ═══════════════════════════════════════ -->
+  <main id="hero-view" aria-label="Scan form">
+    <section id="hero">
+      <div class="container">
+
+        <div class="hero-eyebrow" aria-hidden="true">
+          <span>⚡</span> Powered by axe-core &amp; WCAG 2.1
+        </div>
+
+        <h1 class="hero-title">
+          Test your website's<br>accessibility
+        </h1>
+
+        <p class="hero-subtitle">
+          Instantly audit any public URL for WCAG AA or AAA violations.
+          Get a score, grade, and actionable fix guidance — all in one view.
+        </p>
+
+        <!-- Error banner (clickable when relevant) -->
+        <div id="error-banner" class="hidden" role="alert" aria-live="assertive">
+          <span aria-hidden="true">⚠️</span>
+          <span id="error-msg"></span>
+        </div>
+
+        <!-- Scan form -->
+        <form id="scan-form-el" novalidate aria-label="Website accessibility scan">
+          <div class="input-group">
+            <label for="url-input" class="sr-only">Website URL to scan</label>
+            <input
+              id="url-input"
+              type="url"
+              placeholder="https://www.example.com"
+              autocomplete="url"
+              autocapitalize="none"
+              spellcheck="false"
+              aria-describedby="url-hint"
+            />
+            <button id="scan-btn" type="submit" aria-label="Start accessibility scan">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true">
+                <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+              </svg>
+              Scan Now
+            </button>
+          </div>
+          <p id="url-hint" class="sr-only">Enter the full URL of the website you want to check for accessibility issues</p>
+
+          <div class="form-controls">
+            <span class="form-label" id="wcag-label">WCAG Level</span>
+            <div class="pill-group" role="radiogroup" aria-labelledby="wcag-label">
+              <input type="radio" name="wcag-level" id="wcag-aa"  value="AA"  checked />
+              <label for="wcag-aa">AA</label>
+              <input type="radio" name="wcag-level" id="wcag-aaa" value="AAA" />
+              <label for="wcag-aaa">AAA</label>
+            </div>
+          </div>
+        </form>
+
+      </div>
+    </section>
+  </main>
+
+  <!-- ═══════════════════════════════════════
+       LOADING VIEW
+  ═══════════════════════════════════════ -->
+  <section id="loading-view" class="hidden" aria-live="polite" aria-label="Scanning in progress">
+    <div class="scan-pulse" aria-hidden="true">
+      <div class="ring"></div>
+      <div class="ring"></div>
+      <div class="ring"></div>
+      <div class="pulse-core"></div>
+    </div>
+    <div class="loading-text">Scanning for accessibility issues…</div>
+    <div class="loading-url" id="loading-url">https://</div>
+  </section>
+
+  <!-- ═══════════════════════════════════════
+       RESULTS VIEW
+  ═══════════════════════════════════════ -->
+  <section id="results-view" class="hidden" aria-label="Scan results">
+    <div class="container">
+
+      <!-- New Scan button -->
+      <button id="new-scan-btn" class="new-scan-btn" type="button" aria-label="Run a new scan">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true">
+          <polyline points="15 18 9 12 15 6"/>
+        </svg>
+        New Scan
+      </button>
+
+      <!-- ── Score Hero Card ───────────────────── -->
+      <article class="score-hero" aria-label="Accessibility score summary">
+        <div class="score-ring-wrap" aria-hidden="true">
+          <svg viewBox="0 0 160 160" xmlns="http://www.w3.org/2000/svg">
+            <circle class="ring-bg" cx="80" cy="80" r="70"/>
+            <circle id="score-ring-fill" cx="80" cy="80" r="70"/>
+          </svg>
+          <div class="score-center">
+            <div id="score-number" aria-live="polite">0</div>
+            <div class="score-label">/ 100</div>
+          </div>
+        </div>
+
+        <div class="score-details">
+          <div class="score-header">
+            <div id="grade-badge" class="grade-badge grade-F" aria-label="Grade">F</div>
+            <div class="score-headline">
+              <strong id="result-url" aria-label="Scanned URL"></strong>
+              <span id="result-wcag">WCAG AA</span>
+            </div>
+          </div>
+          <div class="compliance-bar-wrap">
+            <div class="compliance-label">
+              <span>Compliance</span>
+              <span id="compliance-value" aria-live="polite">0%</span>
+            </div>
+            <div class="compliance-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" aria-label="Compliance percentage">
+              <div class="compliance-fill" id="compliance-fill"></div>
+            </div>
+          </div>
+        </div>
+      </article>
+
+      <!-- ── Impact Breakdown Stats ────────────── -->
+      <div class="stats-row" aria-label="Violation counts by severity">
+        <div class="stat-card critical" role="group" aria-label="Critical violations">
+          <div class="stat-value" id="stat-critical">0</div>
+          <div class="stat-name">Critical</div>
+        </div>
+        <div class="stat-card serious" role="group" aria-label="Serious violations">
+          <div class="stat-value" id="stat-serious">0</div>
+          <div class="stat-name">Serious</div>
+        </div>
+        <div class="stat-card moderate" role="group" aria-label="Moderate violations">
+          <div class="stat-value" id="stat-moderate">0</div>
+          <div class="stat-name">Moderate</div>
+        </div>
+        <div class="stat-card minor" role="group" aria-label="Minor violations">
+          <div class="stat-value" id="stat-minor">0</div>
+          <div class="stat-name">Minor</div>
+        </div>
+        <div class="stat-card passes" role="group" aria-label="Passing rules">
+          <div class="stat-value" id="stat-passes">0</div>
+          <div class="stat-name">Passed</div>
+        </div>
+      </div>
+
+      <!-- ── Recommendation Banner ─────────────── -->
+      <aside class="recommendation-banner" aria-label="Accessibility recommendation">
+        <div class="rec-icon" aria-hidden="true">💡</div>
+        <div>
+          <div class="rec-title">Recommendation</div>
+          <p class="rec-text" id="recommendation-text"></p>
+        </div>
+      </aside>
+
+      <!-- ── Passes Summary ─────────────────────── -->
+      <div class="passes-card" aria-label="Passing rules summary">
+        <div class="passes-icon" aria-hidden="true">✅</div>
+        <div class="passes-info">
+          <div class="passes-count" id="passes-count" aria-live="polite">0</div>
+          <div class="passes-label">accessibility rules passed</div>
+        </div>
+      </div>
+
+      <!-- ── Violations List ───────────────────── -->
+      <section aria-label="Accessibility violations">
+        <h2 class="section-title" id="violations-section-title">
+          Violations
+          <span class="count-badge" aria-label="total violations">0</span>
+        </h2>
+
+        <div id="no-violations-msg" class="hidden" style="text-align:center;padding:40px 20px;color:var(--text-secondary);">
+          <div style="font-size:2.5rem;margin-bottom:12px;">🎉</div>
+          <div style="font-size:1.1rem;font-weight:600;color:var(--pass);margin-bottom:6px;">No violations found!</div>
+          <div>This page meets all checked WCAG criteria. Excellent work!</div>
+        </div>
+
+        <div id="violations-list" aria-label="List of accessibility violations"></div>
+      </section>
+
+    </div>
+  </section>
+
+  <!-- ═══════════════════════════════════════
+       ADMIN PASSWORD MODAL
+       Shown when the admin trigger is clicked 5×
+  ═══════════════════════════════════════ -->
+  <div
+    id="admin-password-modal"
+    class="modal-wrap"
+    role="dialog"
+    aria-modal="true"
+    aria-label="Admin authentication"
+    aria-hidden="true"
+  >
+    <div id="admin-password-modal-overlay" class="modal-overlay"></div>
+    <div class="modal-box">
+      <div class="modal-header">
+        <span class="modal-icon" aria-hidden="true">🔐</span>
+        <div>
+          <div class="modal-title">Admin Access</div>
+          <div class="modal-subtitle">Enter the admin password to continue</div>
+        </div>
+      </div>
+      <div class="modal-body">
+        <label for="admin-password-input" class="sr-only">Admin password</label>
+        <input
+          id="admin-password-input"
+          type="password"
+          placeholder="Admin password"
+          autocomplete="current-password"
+          spellcheck="false"
+          class="modal-input"
+        />
+        <p id="admin-password-error" class="modal-error" role="alert" aria-live="polite"></p>
+      </div>
+      <div class="modal-footer">
+        <button id="admin-password-cancel" class="modal-btn-secondary" type="button">Cancel</button>
+        <button id="admin-password-submit" class="modal-btn-primary" type="button">Unlock</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════
+       ADMIN SETTINGS DRAWER
+       Only visible after password verification
+  ═══════════════════════════════════════ -->
+  <div id="admin-overlay" aria-hidden="true"></div>
+
+  <aside
+    id="admin-drawer"
+    role="dialog"
+    aria-modal="true"
+    aria-label="Admin settings"
+    aria-hidden="true"
+  >
+    <div class="drawer-header">
+      <div class="drawer-title">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+          <circle cx="12" cy="12" r="3"/>
+          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+        </svg>
+        Admin Settings
+        <span class="admin-badge">Admin</span>
+      </div>
+      <button id="admin-drawer-close" class="drawer-close" type="button" aria-label="Close admin settings">✕</button>
+    </div>
+
+    <div class="drawer-body">
+
+      <!-- Session token status (read-only info) -->
+      <div class="token-status" role="status" aria-label="Session token status">
+        <div id="token-status-dot" class="token-dot idle" aria-hidden="true"></div>
+        <span id="token-status-text" class="token-status-text">Checking…</span>
+      </div>
+
+      <!-- API Base URL (the only thing admins need to configure) -->
+      <div class="form-field">
+        <label for="admin-api-base">API Base URL</label>
+        <input
+          id="admin-api-base"
+          type="url"
+          placeholder="https://accessibilityapp-bxzn.onrender.com"
+          autocomplete="off"
+          spellcheck="false"
+        />
+        <p class="field-hint">
+          The base URL of the deployed Go API. Change this only if you're running
+          a self-hosted instance on a different URL.
+        </p>
+      </div>
+
+      <button id="admin-save-btn" class="btn-primary" type="button">Save Settings</button>
+      <button id="admin-refresh-token" class="btn-secondary" type="button">Force Token Refresh</button>
+
+      <div style="margin-top:32px;padding-top:20px;border-top:1px solid var(--border);">
+        <p style="font-size:0.78rem;color:var(--text-muted);line-height:1.6;">
+          <strong style="color:var(--text-secondary);">How auth works:</strong><br>
+          Session tokens are issued automatically by the server via
+          <code style="color:var(--text-accent);">GET /api/v1/session</code>.
+          Users need no credentials — the server signs tokens internally.
+          Tokens last 20 minutes and renew silently in the background.
+        </p>
+      </div>
+
+    </div>
+  </aside>
+
+</div><!-- #app -->
+
+<script src="app.js"></script>
+</body>
+</html>

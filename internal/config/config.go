@@ -15,6 +15,7 @@ type Config struct {
     WCAGLevel          string
     MaxConcurrentScans int
     JWTSecret          string
+    AdminPassword      string  // separate password for the frontend admin panel
     NodeBin            string
     AxeRunnerScript    string
     AllowPrivateScans  bool
@@ -53,6 +54,16 @@ func GetAllowPrivateScans() bool {
     return global.AllowPrivateScans
 }
 
+// GetAdminPassword returns the admin panel password.
+func GetAdminPassword() string {
+    mu.RLock()
+    defer mu.RUnlock()
+    if global == nil {
+        return ""
+    }
+    return global.AdminPassword
+}
+
 // SetSecret updates the JWT secret at runtime.
 func SetSecret(newSecret string) {
     mu.Lock()
@@ -87,6 +98,7 @@ func Load() *Config {
         WCAGLevel:          getEnv("WCAG_LEVEL", "AA"),
         MaxConcurrentScans: getEnvInt("MAX_CONCURRENT_SCANS", 5),
         JWTSecret:          secret,
+        AdminPassword:      getEnv("ADMIN_PASSWORD", ""),
         NodeBin:            getEnv("NODE_BIN", "node"),
         AxeRunnerScript:    getEnv("AXE_RUNNER_SCRIPT", "scripts/axe_runner.js"),
         AllowPrivateScans:  getEnvBool("ALLOW_PRIVATE_SCANS", false),

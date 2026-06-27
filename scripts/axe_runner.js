@@ -654,16 +654,35 @@ const modalCheck = await page.evaluate(() => {
 const focusVisibleCheck = await (async () => {
   const violations = [];
   const passes = [];
-  const focusableSelector = 'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex="0"]';
+  // Exclude: hidden inputs, inputs with type=hidden, zero-size elements,
+  // and elements injected by third-party widgets (Cloudflare, reCAPTCHA, etc.)
+  const focusableSelector = [
+    'a[href]',
+    'button:not([disabled])',
+    'input:not([disabled]):not([type="hidden"])',
+    'select:not([disabled])',
+    'textarea:not([disabled])',
+    '[tabindex="0"]',
+  ].join(', ');
 
   // Stamp data attributes to uniquely identify elements
   await page.evaluate((sel) => {
     document.querySelectorAll(sel).forEach((el, i) => {
-      if (i < 30) el.setAttribute('data-fv-idx', i);
+      if (i >= 30) return;
+      // Skip zero-size or hidden elements (they can't show a focus indicator)
+      const rect = el.getBoundingClientRect();
+      if (rect.width === 0 && rect.height === 0) return;
+      const style = window.getComputedStyle(el);
+      if (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0') return;
+      el.setAttribute('data-fv-idx', i);
     });
   }, focusableSelector);
 
   const count = await page.$$eval('[data-fv-idx]', els => els.length);
+
+  let anyViolation = false;
+  let anyPass = false;
+  const violatingNodes = [];
 
   for (let i = 0; i < count; i++) {
     const sel = `[data-fv-idx="${i}"]`;
@@ -688,17 +707,10 @@ const focusVisibleCheck = await (async () => {
       const hasVisibleIndicator = outlineChanged || shadowChanged || borderChanged;
 
       if (hasVisibleIndicator) {
-        passes.push({ id: 'focus-visible', description: 'Element has a visible focus indicator.' });
+        anyPass = true;
       } else {
-        violations.push({
-          id: 'focus-visible',
-          impact: 'serious',
-          description: 'Element shows no visible focus indicator (outline, box-shadow, or border unchanged on :focus).',
-          help: 'Add a visible :focus style using outline, box-shadow, or border.',
-          helpUrl: 'https://www.w3.org/WAI/WCAG21/Understanding/focus-visible.html',
-          tags: ['wcag21aa', 'wcag247'],
-          nodes: [{ html: unfocused.html, target: [unfocused.tag], failureSummary: '' }]
-        });
+        anyViolation = true;
+        violatingNodes.push({ html: unfocused.html, target: [unfocused.tag], failureSummary: '' });
       }
     } catch (_) { /* element hidden or stale – skip */ }
   }
@@ -707,6 +719,22 @@ const focusVisibleCheck = await (async () => {
   await page.evaluate(() => {
     document.querySelectorAll('[data-fv-idx]').forEach(el => el.removeAttribute('data-fv-idx'));
   });
+
+  // Report as a single violation (with all failing nodes) or a single pass
+  // — not one entry per element — to prevent score inflation.
+  if (anyViolation) {
+    violations.push({
+      id: 'focus-visible',
+      impact: 'serious',
+      description: 'One or more elements show no visible focus indicator (outline, box-shadow, or border unchanged on :focus).',
+      help: 'Add a visible :focus style using outline, box-shadow, or border.',
+      helpUrl: 'https://www.w3.org/WAI/WCAG21/Understanding/focus-visible.html',
+      tags: ['wcag21aa', 'wcag247'],
+      nodes: violatingNodes,
+    });
+  } else if (anyPass) {
+    passes.push({ id: 'focus-visible', description: 'All interactive elements have a visible focus indicator.' });
+  }
 
   return { violations, passes };
 })();
@@ -756,14 +784,32 @@ const onFocusContextChangeCheck = await (async () => {
   const violations = [];
   const passes = [];
   const initialUrl = page.url();
-  const focusableSelector = 'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex="0"]';
+  // Exclude hidden inputs — same reasoning as focus-visible
+  const focusableSelector = [
+    'a[href]',
+    'button:not([disabled])',
+    'input:not([disabled]):not([type="hidden"])',
+    'select:not([disabled])',
+    '[tabindex="0"]',
+  ].join(', ');
 
   // Stamp elements (limit to 20 to keep runtime reasonable)
   await page.evaluate((sel) => {
-    document.querySelectorAll(sel).forEach((el, i) => { if (i < 20) el.setAttribute('data-oc-idx', i); });
+    document.querySelectorAll(sel).forEach((el, i) => {
+      if (i >= 20) return;
+      const rect = el.getBoundingClientRect();
+      if (rect.width === 0 && rect.height === 0) return;
+      const style = window.getComputedStyle(el);
+      if (style.display === 'none' || style.visibility === 'hidden') return;
+      el.setAttribute('data-oc-idx', i);
+    });
   }, focusableSelector);
 
   const count = await page.$$eval('[data-oc-idx]', els => els.length);
+
+  let contextChangeFound = false;
+  let anyPass = false;
+  const violatingNodes = [];
 
   for (let i = 0; i < count; i++) {
     const sel = `[data-oc-idx="${i}"]`;
@@ -778,30 +824,16 @@ const onFocusContextChangeCheck = await (async () => {
       const dialogsAfter = await page.$$eval('[role="dialog"], dialog[open]', els => els.length);
 
       if (currentUrl !== initialUrl) {
-        violations.push({
-          id: 'on-focus-context-change',
-          impact: 'serious',
-          description: 'Focusing this element triggered a page navigation (URL changed).',
-          help: 'Do not cause context changes (navigation, dialogs) solely from focus events.',
-          helpUrl: 'https://www.w3.org/WAI/WCAG21/Understanding/on-focus.html',
-          tags: ['wcag2a', 'wcag321'],
-          nodes: [{ html: elInfo.html, target: [elInfo.tag], failureSummary: '' }]
-        });
+        contextChangeFound = true;
+        violatingNodes.push({ html: elInfo.html, target: [elInfo.tag], failureSummary: 'Focusing this element triggered a page navigation (URL changed).' });
         // Navigate back before continuing
         await page.goto(initialUrl, { waitUntil: 'domcontentloaded', timeout: 30000 }).catch(() => {});
         break;
       } else if (dialogsAfter > dialogsBefore) {
-        violations.push({
-          id: 'on-focus-context-change',
-          impact: 'serious',
-          description: 'Focusing this element opened a dialog, causing an unexpected context change on focus.',
-          help: 'Do not open dialogs or menus solely as a result of receiving focus.',
-          helpUrl: 'https://www.w3.org/WAI/WCAG21/Understanding/on-focus.html',
-          tags: ['wcag2a', 'wcag321'],
-          nodes: [{ html: elInfo.html, target: [elInfo.tag], failureSummary: '' }]
-        });
+        contextChangeFound = true;
+        violatingNodes.push({ html: elInfo.html, target: [elInfo.tag], failureSummary: 'Focusing this element opened a dialog.' });
       } else {
-        passes.push({ id: 'on-focus-context-change', description: 'Focusing element causes no context change.' });
+        anyPass = true;
       }
     } catch (_) { /* hidden / removed element – skip */ }
   }
@@ -810,6 +842,21 @@ const onFocusContextChangeCheck = await (async () => {
   await page.evaluate(() => {
     document.querySelectorAll('[data-oc-idx]').forEach(el => el.removeAttribute('data-oc-idx'));
   });
+
+  // Report as a single violation with all affected nodes, or a single pass
+  if (contextChangeFound) {
+    violations.push({
+      id: 'on-focus-context-change',
+      impact: 'serious',
+      description: 'Focusing one or more elements caused an unexpected context change (URL navigation or dialog).',
+      help: 'Do not cause context changes (navigation, dialogs) solely from focus events.',
+      helpUrl: 'https://www.w3.org/WAI/WCAG21/Understanding/on-focus.html',
+      tags: ['wcag2a', 'wcag321'],
+      nodes: violatingNodes,
+    });
+  } else if (anyPass) {
+    passes.push({ id: 'on-focus-context-change', description: 'Focusing elements causes no context change.' });
+  }
 
   return { violations, passes };
 })();

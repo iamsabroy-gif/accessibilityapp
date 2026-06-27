@@ -52,3 +52,9 @@ services:
 
       - key: AXE_RUNNER_SCRIPT
         value: scripts/axe_runner.js
+
+      # Password for the frontend admin panel (5-click unlock).
+      # Set this to a strong password in the Render dashboard.
+      # If left empty, the admin panel will be disabled.
+      - key: ADMIN_PASSWORD
+        value: ""

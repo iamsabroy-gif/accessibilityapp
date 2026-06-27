@@ -70,6 +70,9 @@ COPY scripts/ ./scripts/
 # Copy the compiled Go server from the builder stage
 COPY --from=go-builder /app/server ./server
 
+# Copy the frontend static files
+COPY frontend/ ./frontend/
+
 # ── Security: run as a non-root user ─────────────────────────────────────────
 RUN groupadd -r appuser \
  && useradd -r -g appuser -G audio,video appuser \

@@ -133,6 +133,58 @@ func (h *Handler) GenerateToken(w http.ResponseWriter, r *http.Request) {
     writeJSON(w, http.StatusOK, map[string]string{"token": signed})
 }
 
+// Session handles GET /api/v1/session – issues a short-lived JWT to any visitor.
+// No client secret is required; the server signs with its own JWT_SECRET.
+// This makes the frontend usable by anyone without exposing the JWT_SECRET.
+func (h *Handler) Session(w http.ResponseWriter, r *http.Request) {
+    serverSecret := config.GetSecret()
+    if serverSecret == "" {
+        writeError(w, http.StatusInternalServerError, "JWT secret is not configured on the server", "")
+        return
+    }
+    token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.StandardClaims{
+        ExpiresAt: time.Now().Add(20 * time.Minute).Unix(),
+        Issuer:    "webaccessibility",
+        Subject:   "guest",
+    })
+    signed, err := token.SignedString([]byte(serverSecret))
+    if err != nil {
+        writeError(w, http.StatusInternalServerError, "failed to sign token", err.Error())
+        return
+    }
+    writeJSON(w, http.StatusOK, map[string]interface{}{
+        "token":      signed,
+        "expires_in": 1200, // 20 minutes in seconds
+    })
+}
+
+// VerifyAdminPassword handles POST /api/v1/admin/verify.
+// Checks the submitted password against the ADMIN_PASSWORD env var.
+// Returns 200 OK if it matches, 401 if not.
+func (h *Handler) VerifyAdminPassword(w http.ResponseWriter, r *http.Request) {
+    var req struct {
+        Password string `json:"password"`
+    }
+    if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+        writeError(w, http.StatusBadRequest, "invalid request body", err.Error())
+        return
+    }
+
+    adminPwd := config.GetAdminPassword()
+    if adminPwd == "" {
+        writeError(w, http.StatusServiceUnavailable, "admin mode is not configured on this server", "")
+        return
+    }
+
+    if req.Password != adminPwd {
+        writeError(w, http.StatusUnauthorized, "incorrect admin password", "")
+        return
+    }
+
+    writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
+
 // SetSecret handles POST /api/v1/secret to change the JWT secret at runtime.
 func (h *Handler) SetSecret(w http.ResponseWriter, r *http.Request) {
     var payload struct { Secret string `json:"secret"` }
