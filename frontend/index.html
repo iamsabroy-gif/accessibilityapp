@@ -6,7 +6,8 @@
   <title>AccessScan — WCAG Accessibility Scanner</title>
   <meta name="description" content="Scan any website for WCAG 2.1 accessibility compliance. Get detailed violation reports, impact breakdowns, and an accessibility score powered by axe-core." />
   <meta name="theme-color" content="#070b18" />
-  <link rel="stylesheet" href="style.css?v=20260629" />
+  <link rel="stylesheet" href="style.css?v=20260629c" />
+  <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
 </head>
 <body>
 <div id="app">
@@ -179,6 +180,12 @@
           </svg>
           Download AI Brief (.md)
         </button>
+        <button id="download-xlsx-btn" class="new-scan-btn download-xlsx-btn" type="button" aria-label="Download full report as Excel workbook">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><path d="M8 13h2l2 3 2-3h2"/>
+          </svg>
+          Download Excel (.xlsx)
+        </button>
       </div>
 
       <!-- ── Score Hero Card ───────────────────── -->
@@ -270,6 +277,15 @@
         </div>
 
         <div id="violations-list" aria-label="List of accessibility violations"></div>
+      </section>
+
+      <!-- ── Linked Pages (depth=1) ──────────────── -->
+      <section id="linked-pages-section" class="hidden" aria-label="Linked page scan results">
+        <h2 class="section-title">
+          Linked Pages
+          <span class="count-badge" id="linked-pages-count">0</span>
+        </h2>
+        <div id="linked-pages-list" class="linked-pages-list"></div>
       </section>
 
       <!-- ── Page Screenshot ───────────────────────── -->
@@ -409,6 +425,6 @@
 
 </div><!-- #app -->
 
-<script src="app.js?v=20260629"></script>
+<script src="app.js?v=20260629c"></script>
 </body>
 </html>

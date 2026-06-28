@@ -311,6 +311,88 @@ function renderResults(result) {
       .forEach(v => violList.appendChild(buildViolationCard(v)));
   }
 
+  // ── Linked Pages (depth=1 embedded results) ───
+  const linkedSection = $('linked-pages-section');
+  const linkedList    = $('linked-pages-list');
+  const linkedCount   = $('linked-pages-count');
+  const embedded      = result.embedded_results || [];
+  if (linkedSection && linkedList) {
+    linkedList.innerHTML = '';
+    if (embedded.length > 0) {
+      linkedCount.textContent = embedded.length;
+      embedded.forEach(sub => {
+        const s     = sub.summary || {};
+        const sc    = s.score ?? 0;
+        const gr    = s.grade || 'F';
+        const subViols = sub.violations || [];
+        const viol  = s.violation_count ?? subViols.length;
+        const pass  = s.pass_count ?? (sub.passes || []).length;
+        const comp  = s.compliance_pct ?? 0;
+        const colors = { A:'#10b981', B:'#06b6d4', C:'#f59e0b', D:'#f97316', F:'#f43f5e' };
+        const color = colors[gr] || '#6366f1';
+
+        const card = document.createElement('article');
+        card.className = 'linked-page-card';
+
+        const header = document.createElement('div');
+        header.className = 'linked-page-header';
+        header.setAttribute('role', 'button');
+        header.setAttribute('aria-expanded', 'false');
+        header.tabIndex = 0;
+        header.innerHTML = `
+          <div class="linked-page-score" style="border-color:${color}">
+            <span class="linked-page-grade grade-${gr}">${gr}</span>
+            <span class="linked-page-score-num">${sc}</span>
+          </div>
+          <div class="linked-page-info">
+            <div class="linked-page-url" title="${escapeHTML(sub.url || '')}">${escapeHTML(sub.url || '')}</div>
+            <div class="linked-page-meta">
+              <span class="linked-page-stat viol">${viol} violation${viol !== 1 ? 's' : ''}</span>
+              <span class="linked-page-stat pass">${pass} passed</span>
+              <span class="linked-page-stat comp">${comp.toFixed(1)}% compliant</span>
+            </div>
+          </div>
+          <svg class="linked-page-chevron" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+            <polyline points="6 9 12 15 18 9"/>
+          </svg>`;
+
+        const body = document.createElement('div');
+        body.className = 'linked-page-body';
+        body.style.display = 'none';
+
+        if (subViols.length > 0) {
+          const violTitle = document.createElement('div');
+          violTitle.className = 'linked-page-body-title';
+          violTitle.textContent = `Violations (${subViols.length})`;
+          body.appendChild(violTitle);
+          subViols
+            .sort((a, b) => impactOrder(b.impact) - impactOrder(a.impact))
+            .forEach(v => body.appendChild(buildViolationCard(v)));
+        } else {
+          const noViols = document.createElement('p');
+          noViols.className = 'linked-page-no-viols';
+          noViols.textContent = 'No violations found on this page.';
+          body.appendChild(noViols);
+        }
+
+        const toggle = () => {
+          const isOpen = card.classList.toggle('open');
+          body.style.display = isOpen ? 'block' : 'none';
+          header.setAttribute('aria-expanded', String(isOpen));
+        };
+        header.addEventListener('click', toggle);
+        header.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(); } });
+
+        card.appendChild(header);
+        card.appendChild(body);
+        linkedList.appendChild(card);
+      });
+      linkedSection.classList.remove('hidden');
+    } else {
+      linkedSection.classList.add('hidden');
+    }
+  }
+
   // ── Page Screenshot ───────────────────────────
   const screenshotSection = $('screenshot-section');
   const screenshotImg     = $('screenshot-img');
@@ -862,6 +944,163 @@ function downloadUserReport() {
   setTimeout(() => URL.revokeObjectURL(objectURL), 1000);
 }
 
+// ─── Excel Report Download ────────────────────────────────────
+function downloadExcelReport() {
+  if (!state.scanResult || typeof XLSX === 'undefined') return;
+  const result = state.scanResult;
+  const wb = XLSX.utils.book_new();
+
+  const safeSheet = (name) => name.replace(/[\\/*?:\[\]]/g, '_').substring(0, 31);
+  const ts = (d) => d ? new Date(d).toLocaleString() : '';
+
+  function buildSummaryRows(r) {
+    const s = r.summary || {};
+    return [
+      ['URL', r.url || ''],
+      ['Scanned At', ts(r.scanned_at)],
+      ['Duration (ms)', r.duration_ms ?? ''],
+      ['Score', s.score ?? ''],
+      ['Grade', s.grade || ''],
+      ['Compliance %', s.compliance_pct ?? ''],
+      ['WCAG Level', s.wcag_level || s.level || ''],
+      ['Violations', s.violation_count ?? (r.violations || []).length],
+      ['Passes', s.pass_count ?? (r.passes || []).length],
+    ];
+  }
+
+  function buildViolationRows(violations) {
+    if (!violations || violations.length === 0) return [['No violations found']];
+    const headers = ['Impact', 'Rule ID', 'Description', 'Help', 'WCAG Tags', 'Affected Elements', 'Failure Summary', 'Help URL'];
+    const rows = [headers];
+    violations
+      .sort((a, b) => impactOrder(b.impact) - impactOrder(a.impact))
+      .forEach(v => {
+        const wcagTags = (v.tags || []).filter(t => t.startsWith('wcag')).join(', ');
+        const nodes = v.nodes || [];
+        if (nodes.length === 0) {
+          rows.push([v.impact || '', v.id || '', v.description || '', v.help || '', wcagTags, '', '', v.helpUrl || v.help_url || '']);
+        } else {
+          nodes.forEach((n, i) => {
+            rows.push([
+              i === 0 ? (v.impact || '') : '',
+              i === 0 ? (v.id || '') : '',
+              i === 0 ? (v.description || '') : '',
+              i === 0 ? (v.help || '') : '',
+              i === 0 ? wcagTags : '',
+              n.html || '',
+              n.failureSummary || n.failure_summary || '',
+              i === 0 ? (v.helpUrl || v.help_url || '') : '',
+            ]);
+          });
+        }
+      });
+    return rows;
+  }
+
+  function buildPassRows(passes) {
+    if (!passes || passes.length === 0) return [['No pass data']];
+    return [['Rule ID', 'Nodes Tested'], ...passes.map(p => [p.id || '', p.node_count ?? ''])];
+  }
+
+  function addPageSheet(wb, r, sheetName) {
+    const summaryRows = buildSummaryRows(r);
+    const violRows = buildViolationRows(r.violations);
+    const passRows = buildPassRows(r.passes || r.pass_rules);
+
+    const data = [
+      ...summaryRows,
+      [],
+      ['VIOLATIONS'],
+      ...violRows,
+      [],
+      ['PASSED RULES'],
+      ...passRows,
+    ];
+    const ws = XLSX.utils.aoa_to_sheet(data);
+
+    // Bold summary labels and section headers
+    const range = XLSX.utils.decode_range(ws['!ref'] || 'A1');
+    for (let R = range.s.r; R <= range.e.r; R++) {
+      const cell = ws[XLSX.utils.encode_cell({ r: R, c: 0 })];
+      if (cell && (R < summaryRows.length || cell.v === 'VIOLATIONS' || cell.v === 'PASSED RULES')) {
+        if (!cell.s) cell.s = {};
+        cell.s.font = { bold: true };
+      }
+    }
+
+    // Auto-size columns
+    const colWidths = [];
+    for (let C = range.s.c; C <= range.e.c; C++) {
+      let max = 10;
+      for (let R = range.s.r; R <= range.e.r; R++) {
+        const cell = ws[XLSX.utils.encode_cell({ r: R, c: C })];
+        if (cell && cell.v != null) max = Math.max(max, Math.min(String(cell.v).length + 2, 60));
+      }
+      colWidths.push({ wch: max });
+    }
+    ws['!cols'] = colWidths;
+
+    XLSX.utils.book_append_sheet(wb, ws, safeSheet(sheetName));
+  }
+
+  // 1. Index sheet
+  const embedded = result.embedded_results || [];
+  const indexRows = [
+    ['AccessScan — Full Report'],
+    ['Generated', new Date().toLocaleString()],
+    [],
+    ['#', 'Page URL', 'Score', 'Grade', 'Compliance %', 'Violations', 'Passes', 'Sheet'],
+  ];
+  const mainSummary = result.summary || {};
+  const mainSheetName = 'Main Page';
+  indexRows.push([
+    1,
+    result.url || '',
+    mainSummary.score ?? '',
+    mainSummary.grade || '',
+    mainSummary.compliance_pct ?? '',
+    mainSummary.violation_count ?? (result.violations || []).length,
+    mainSummary.pass_count ?? (result.passes || []).length,
+    mainSheetName,
+  ]);
+  const sheetNames = [];
+  embedded.forEach((sub, i) => {
+    const s = sub.summary || {};
+    let name = 'Link ' + (i + 1);
+    try { name = new URL(sub.url).pathname.replace(/\//g, '_').substring(0, 20) || name; } catch (_) {}
+    name = safeSheet(name) || 'Link ' + (i + 1);
+    if (sheetNames.includes(name)) name = name.substring(0, 28) + '_' + (i + 1);
+    sheetNames.push(name);
+    indexRows.push([
+      i + 2,
+      sub.url || '',
+      s.score ?? '',
+      s.grade || '',
+      s.compliance_pct ?? '',
+      s.violation_count ?? (sub.violations || []).length,
+      s.pass_count ?? (sub.passes || []).length,
+      name,
+    ]);
+  });
+
+  const indexWs = XLSX.utils.aoa_to_sheet(indexRows);
+  indexWs['!cols'] = [{ wch: 4 }, { wch: 50 }, { wch: 8 }, { wch: 8 }, { wch: 14 }, { wch: 12 }, { wch: 8 }, { wch: 22 }];
+  XLSX.utils.book_append_sheet(wb, indexWs, 'Index');
+
+  // 2. Main page sheet
+  addPageSheet(wb, result, mainSheetName);
+
+  // 3. Linked page sheets
+  embedded.forEach((sub, i) => {
+    addPageSheet(wb, sub, sheetNames[i]);
+  });
+
+  // Download
+  let host = 'scan-report';
+  try { host = new URL(result.url).hostname || host; } catch (_) {}
+  XLSX.writeFile(wb, `${host.replace(/[^a-z0-9.-]+/gi, '-')}-accessibility-report.xlsx`);
+}
+
 // ─── Admin Panel ───────────────────────────────────────────────
 // Step 1: 5-click the dot → show password prompt modal
 // Step 2: enter ADMIN_PASSWORD → verify via POST /api/v1/admin/verify
@@ -1064,6 +1303,7 @@ document.addEventListener('DOMContentLoaded', () => {
   $('new-scan-btn')?.addEventListener('click', () => { setView('hero'); urlInput?.focus(); });
   $('download-report-btn')?.addEventListener('click', downloadUserReport);
   $('download-md-btn')?.addEventListener('click', downloadAIIssueBrief);
+  $('download-xlsx-btn')?.addEventListener('click', downloadExcelReport);
   $('coverage-menu-btn')?.addEventListener('click', showCoverage);
   $('coverage-back-btn')?.addEventListener('click', () => setView(state.previousView === 'coverage' ? 'hero' : state.previousView));
   $('coverage-search')?.addEventListener('input', renderCoverageRows);
