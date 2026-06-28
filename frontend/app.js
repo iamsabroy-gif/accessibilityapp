@@ -15,6 +15,7 @@ const LS_KEY_TOKEN      = 'wacs_token';
 const LS_KEY_TOKEN_EXP  = 'wacs_token_exp';
 const LS_KEY_ADMIN_AUTH = 'wacs_admin_authed'; // flag: admin is unlocked this session
 const LS_KEY_ADMIN_TOKEN = 'wacs_admin_token';
+const LS_KEY_SCAN_MODE   = 'wacs_scan_mode'; // 'parallel' or 'serial'
 
 // Token refresh buffer — refresh when less than this time remains (ms)
 const TOKEN_REFRESH_BUFFER_MS = 3 * 60 * 1000; // 3 minutes
@@ -56,6 +57,10 @@ function apiBase() {
   const stored = localStorage.getItem(LS_KEY_API_BASE);
   if (stored) return stored.replace(/\/$/, '');
   return DEFAULT_API_BASE;
+}
+
+function getScanMode() {
+  return localStorage.getItem(LS_KEY_SCAN_MODE) || 'serial';
 }
 
 function showError(msg, clickHandler) {
@@ -226,7 +231,7 @@ async function runScan(url, wcagLevel, depth = 0) {
     // If depth=1, scan discovered links in parallel from the frontend
     const links = data.discovered_links || [];
     if (depth === 1 && links.length > 0) {
-      scanLinksInParallel(links, wcagLevel);
+      scanDiscoveredLinks(links, wcagLevel);
     }
   } catch (err) {
     showError(`Scan error: ${err.message}`);
@@ -234,17 +239,19 @@ async function runScan(url, wcagLevel, depth = 0) {
   }
 }
 
-async function scanLinksInParallel(links, wcagLevel) {
+async function scanDiscoveredLinks(links, wcagLevel) {
   const TIMEOUT_MS = 3 * 60 * 1000;
   const linkedSection = $('linked-pages-section');
   const linkedList    = $('linked-pages-list');
   const linkedCount   = $('linked-pages-count');
   if (!linkedSection || !linkedList) return;
 
+  const mode = getScanMode();
+
   // Show section with loading placeholders
   linkedCount.textContent = links.length;
   linkedList.innerHTML = '';
-  const cardStates = links.map((linkUrl, i) => {
+  const cardStates = links.map((linkUrl) => {
     const card = document.createElement('article');
     card.className = 'linked-page-card linked-page-loading';
     card.innerHTML = `
@@ -255,20 +262,23 @@ async function scanLinksInParallel(links, wcagLevel) {
         <div class="linked-page-info">
           <div class="linked-page-url" title="${escapeHTML(linkUrl)}">${escapeHTML(linkUrl)}</div>
           <div class="linked-page-meta">
-            <span class="linked-page-stat scanning">Scanning…</span>
+            <span class="linked-page-stat scanning">${mode === 'serial' ? 'Queued…' : 'Scanning…'}</span>
           </div>
         </div>
       </div>`;
     linkedList.appendChild(card);
-    return { url: linkUrl, card, index: i, done: false };
+    return { url: linkUrl, card, done: false };
   });
   linkedSection.classList.remove('hidden');
 
-  const startTime = Date.now();
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), TIMEOUT_MS);
 
   const scanOne = async (entry) => {
+    // Update status to scanning (for serial mode where it was "Queued")
+    const statusEl = entry.card.querySelector('.linked-page-stat');
+    if (statusEl) statusEl.textContent = 'Scanning…';
+
     try {
       await ensureToken();
       const res = await fetch(`${apiBase()}/api/v1/scan`, {
@@ -284,7 +294,6 @@ async function scanLinksInParallel(links, wcagLevel) {
       if (!res.ok) throw new Error(data.error || 'Scan failed');
       entry.done = true;
       renderLinkedPageCard(entry.card, data);
-      // Add to embedded results for Excel export
       if (state.scanResult) {
         if (!state.scanResult.embedded_results) state.scanResult.embedded_results = [];
         state.scanResult.embedded_results.push(data);
@@ -299,10 +308,20 @@ async function scanLinksInParallel(links, wcagLevel) {
     }
   };
 
-  await Promise.allSettled(cardStates.map(e => scanOne(e)));
-  clearTimeout(timeout);
+  if (mode === 'parallel') {
+    await Promise.allSettled(cardStates.map(e => scanOne(e)));
+  } else {
+    for (const entry of cardStates) {
+      if (controller.signal.aborted) {
+        renderLinkedPageTimeout(entry.card, entry.url);
+        entry.done = true;
+        continue;
+      }
+      await scanOne(entry);
+    }
+  }
 
-  // Flag any that didn't finish (shouldn't happen since Promise.allSettled waits, but safety net)
+  clearTimeout(timeout);
   cardStates.filter(e => !e.done).forEach(e => renderLinkedPageTimeout(e.card, e.url));
 }
 
@@ -1313,12 +1332,24 @@ async function uploadCoverageReport() {
   }
 }
 
+function updateScanModeToggle() {
+  const mode = getScanMode();
+  $('scan-mode-serial')?.classList.toggle('active', mode === 'serial');
+  $('scan-mode-parallel')?.classList.toggle('active', mode === 'parallel');
+}
+
+function setScanMode(mode) {
+  localStorage.setItem(LS_KEY_SCAN_MODE, mode);
+  updateScanModeToggle();
+}
+
 function openAdminDrawer() {
   const overlay = $('admin-overlay');
   const drawer  = $('admin-drawer');
   const apiInput = $('admin-api-base');
 
   if (apiInput) apiInput.value = localStorage.getItem(LS_KEY_API_BASE) || apiBase();
+  updateScanModeToggle();
   updateAdminTokenStatus();
 
   overlay.classList.add('open');
@@ -1424,6 +1455,8 @@ document.addEventListener('DOMContentLoaded', () => {
   $('admin-overlay')?.addEventListener('click', closeAdminDrawer);
   $('admin-drawer-close')?.addEventListener('click', closeAdminDrawer);
   $('admin-save-btn')?.addEventListener('click', saveAdminSettings);
+  $('scan-mode-serial')?.addEventListener('click', () => setScanMode('serial'));
+  $('scan-mode-parallel')?.addEventListener('click', () => setScanMode('parallel'));
   $('coverage-upload-btn')?.addEventListener('click', uploadCoverageReport);
   $('admin-refresh-token')?.addEventListener('click', async () => {
     localStorage.removeItem(LS_KEY_TOKEN);
