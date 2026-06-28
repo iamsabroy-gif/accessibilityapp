@@ -61,15 +61,7 @@ func (h *Handler) Scan(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid url", err.Error())
 		return
 	}
-	wcagLevel := h.WCAGLevel
-	if req.WCAGLevel != "" {
-		req.WCAGLevel = strings.ToUpper(req.WCAGLevel)
-		if req.WCAGLevel != "A" && req.WCAGLevel != "AA" && req.WCAGLevel != "AAA" {
-			writeError(w, http.StatusBadRequest, "wcag_level must be 'A', 'AA', or 'AAA'", "")
-			return
-		}
-		wcagLevel = req.WCAGLevel
-	}
+	const wcagLevel = "AAA"
 	r.Header.Set("X-Scan-URL", req.URL)
 	if isPrivateURL(req.URL) && !config.GetAllowPrivateScans() {
 		writeError(w, http.StatusForbidden, "scanning private/internal addresses is not allowed", "")
@@ -292,15 +284,7 @@ func (h *Handler) ScoreOnly(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusForbidden, "scanning private/internal addresses is not allowed", "")
 		return
 	}
-	wcagLevel := h.WCAGLevel
-	if req.WCAGLevel != "" {
-		req.WCAGLevel = strings.ToUpper(req.WCAGLevel)
-		if req.WCAGLevel != "A" && req.WCAGLevel != "AA" && req.WCAGLevel != "AAA" {
-			writeError(w, http.StatusBadRequest, "wcag_level must be 'A', 'AA', or 'AAA'", "")
-			return
-		}
-		wcagLevel = req.WCAGLevel
-	}
+	const wcagLevel = "AAA"
 	ctx, cancel := context.WithTimeout(r.Context(), h.ScanTimeout)
 	defer cancel()
 	h.Logger.Info("starting score-only scan", zap.String("url", req.URL), zap.String("wcag", wcagLevel))

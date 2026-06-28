@@ -1054,10 +1054,9 @@ document.addEventListener('DOMContentLoaded', () => {
     e.preventDefault();
     const url = urlInput?.value.trim();
     if (!url) { showError('Please enter a URL to scan.'); return; }
-    const wcagLevel = document.querySelector('input[name="wcag-level"]:checked')?.value || 'AA';
     const depth     = parseInt(document.querySelector('input[name="scan-depth"]:checked')?.value ?? '0', 10);
     scanBtn.disabled = true;
-    await runScan(url, wcagLevel, depth);
+    await runScan(url, 'AAA', depth);
     scanBtn.disabled = false;
   });
 

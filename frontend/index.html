@@ -6,7 +6,7 @@
   <title>AccessScan — WCAG Accessibility Scanner</title>
   <meta name="description" content="Scan any website for WCAG 2.1 accessibility compliance. Get detailed violation reports, impact breakdowns, and an accessibility score powered by axe-core." />
   <meta name="theme-color" content="#070b18" />
-  <link rel="stylesheet" href="style.css?v=20260628" />
+  <link rel="stylesheet" href="style.css?v=20260629" />
 </head>
 <body>
 <div id="app">
@@ -82,18 +82,6 @@
             </button>
           </div>
           <p id="url-hint" class="sr-only">Enter the full URL of the website you want to check for accessibility issues</p>
-
-          <div class="form-controls">
-            <span class="form-label" id="wcag-label">WCAG Level</span>
-            <div class="pill-group" role="radiogroup" aria-labelledby="wcag-label">
-              <input type="radio" name="wcag-level" id="wcag-a"   value="A"   />
-              <label for="wcag-a"   title="WCAG 2.1 Level A — minimum compliance">A</label>
-              <input type="radio" name="wcag-level" id="wcag-aa"  value="AA"  checked />
-              <label for="wcag-aa"  title="WCAG 2.1 Level AA — standard compliance (recommended)">AA</label>
-              <input type="radio" name="wcag-level" id="wcag-aaa" value="AAA" />
-              <label for="wcag-aaa" title="WCAG 2.1 Level AAA — enhanced compliance">AAA</label>
-            </div>
-          </div>
 
           <div class="form-controls">
             <span class="form-label" id="depth-label">Scan Depth</span>
@@ -421,6 +409,6 @@
 
 </div><!-- #app -->
 
-<script src="app.js?v=20260628"></script>
+<script src="app.js?v=20260629"></script>
 </body>
 </html>
