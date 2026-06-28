@@ -6,7 +6,7 @@
   <title>AccessScan — WCAG Accessibility Scanner</title>
   <meta name="description" content="Scan any website for WCAG 2.1 accessibility compliance. Get detailed violation reports, impact breakdowns, and an accessibility score powered by axe-core." />
   <meta name="theme-color" content="#070b18" />
-  <link rel="stylesheet" href="style.css" />
+  <link rel="stylesheet" href="style.css?v=20260628" />
 </head>
 <body>
 <div id="app">
@@ -20,6 +20,7 @@
       <span>AccessScan</span>
     </div>
     <div class="topbar-actions">
+      <button id="coverage-menu-btn" class="topbar-menu-btn" type="button">WCAG Coverage</button>
       <!--
         Hidden admin trigger: click 5× rapidly to open the admin panel.
         Intentionally invisible to regular users.
@@ -109,6 +110,48 @@
     </section>
   </main>
 
+  <main id="coverage-view" class="hidden" aria-label="WCAG coverage report">
+    <div class="container coverage-container">
+      <div class="coverage-heading-row">
+        <div>
+          <div class="hero-eyebrow"><span aria-hidden="true">◫</span> Implementation transparency</div>
+          <h1 class="coverage-title">WCAG Coverage</h1>
+          <p id="coverage-subtitle" class="coverage-subtitle">Current scanner coverage by success criterion.</p>
+        </div>
+        <button id="coverage-back-btn" class="new-scan-btn" type="button">← Back to scanner</button>
+      </div>
+      <div id="coverage-error" class="coverage-message hidden" role="alert"></div>
+      <div id="coverage-loading" class="coverage-message">Loading coverage report…</div>
+      <div id="coverage-content" class="hidden">
+        <div class="coverage-stats" aria-label="Coverage summary">
+          <div class="coverage-stat implemented"><strong id="coverage-implemented">0</strong><span>Implemented</span></div>
+          <div class="coverage-stat partial"><strong id="coverage-partial">0</strong><span>Partial</span></div>
+          <div class="coverage-stat missing"><strong id="coverage-missing">0</strong><span>Not implemented</span></div>
+          <div class="coverage-stat total"><strong id="coverage-total">0</strong><span>Total criteria</span></div>
+        </div>
+        <div class="coverage-tools">
+          <label for="coverage-search" class="sr-only">Search coverage report</label>
+          <input id="coverage-search" type="search" placeholder="Search criterion, title, technique…" autocomplete="off" />
+          <label for="coverage-status-filter" class="sr-only">Filter by implementation status</label>
+          <select id="coverage-status-filter">
+            <option value="all">All statuses</option>
+            <option value="implemented">Implemented</option>
+            <option value="partially implemented">Partially implemented</option>
+            <option value="not implemented">Not implemented</option>
+          </select>
+        </div>
+        <p id="coverage-result-count" class="coverage-result-count" aria-live="polite"></p>
+        <div class="coverage-table-wrap">
+          <table class="coverage-table">
+            <thead><tr><th scope="col">SC</th><th scope="col">Criterion</th><th scope="col">Level</th><th scope="col">Status</th><th scope="col">Techniques / implementation</th></tr></thead>
+            <tbody id="coverage-table-body"></tbody>
+          </table>
+        </div>
+        <p id="coverage-updated" class="coverage-updated"></p>
+      </div>
+    </div>
+  </main>
+
   <!-- ═══════════════════════════════════════
        LOADING VIEW
   ═══════════════════════════════════════ -->
@@ -135,6 +178,12 @@
             <polyline points="15 18 9 12 15 6"/>
           </svg>
           New Scan
+        </button>
+        <button id="download-report-btn" class="new-scan-btn download-report-btn" type="button" aria-label="Download a readable HTML accessibility report">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/>
+          </svg>
+          Download Report
         </button>
         <button id="download-md-btn" class="new-scan-btn download-md-btn" type="button" aria-label="Download issues as an AI-ready Markdown file">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true">
@@ -349,6 +398,14 @@
       <button id="admin-save-btn" class="btn-primary" type="button">Save Settings</button>
       <button id="admin-refresh-token" class="btn-secondary" type="button">Force Token Refresh</button>
 
+      <div class="admin-upload-section">
+        <label for="coverage-file-input">WCAG Coverage Report</label>
+        <p class="field-hint">Upload the latest report using the same worksheet structure as <code>wcag_coverage_report.xlsx</code>.</p>
+        <input id="coverage-file-input" type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" />
+        <button id="coverage-upload-btn" class="btn-secondary" type="button">Upload Coverage XLSX</button>
+        <p id="coverage-upload-status" class="upload-status" role="status" aria-live="polite"></p>
+      </div>
+
       <div style="margin-top:32px;padding-top:20px;border-top:1px solid var(--border);">
         <p style="font-size:0.78rem;color:var(--text-muted);line-height:1.6;">
           <strong style="color:var(--text-secondary);">How auth works:</strong><br>
@@ -364,6 +421,6 @@
 
 </div><!-- #app -->
 
-<script src="app.js"></script>
+<script src="app.js?v=20260628"></script>
 </body>
 </html>

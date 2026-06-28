@@ -14,6 +14,7 @@ const LS_KEY_API_BASE   = 'wacs_api_base';
 const LS_KEY_TOKEN      = 'wacs_token';
 const LS_KEY_TOKEN_EXP  = 'wacs_token_exp';
 const LS_KEY_ADMIN_AUTH = 'wacs_admin_authed'; // flag: admin is unlocked this session
+const LS_KEY_ADMIN_TOKEN = 'wacs_admin_token';
 
 // Token refresh buffer — refresh when less than this time remains (ms)
 const TOKEN_REFRESH_BUFFER_MS = 3 * 60 * 1000; // 3 minutes
@@ -29,21 +30,31 @@ const state = {
   token: null,
   tokenExp: null,
   adminUnlocked: false,
+  adminToken: null,
+  coverageEntries: [],
+  previousView: 'hero',
 };
 
 // ─── DOM refs ─────────────────────────────────────────────────
 const $ = (id) => document.getElementById(id);
 
 // ─── Utility ──────────────────────────────────────────────────
-function apiBase() {
-  const stored = localStorage.getItem(LS_KEY_API_BASE);
-  if (stored) return stored.replace(/\/$/, '');
-  
+function isLocalHost() {
   const host = window.location.hostname;
   const proto = window.location.protocol;
-  if (host === 'localhost' || host === '127.0.0.1' || host.startsWith('192.168.') || proto === 'file:') {
-    return host ? window.location.origin : 'http://localhost:8080';
+  return host === 'localhost' || host === '127.0.0.1' || host.startsWith('192.168.') || proto === 'file:';
+}
+
+function apiBase() {
+  if (isLocalHost()) {
+    const stored = localStorage.getItem(LS_KEY_API_BASE);
+    if (stored && (stored.includes('localhost') || stored.includes('127.0.0.1'))) {
+      return stored.replace(/\/$/, '');
+    }
+    return window.location.hostname ? window.location.origin : 'http://localhost:8080';
   }
+  const stored = localStorage.getItem(LS_KEY_API_BASE);
+  if (stored) return stored.replace(/\/$/, '');
   return DEFAULT_API_BASE;
 }
 
@@ -69,10 +80,61 @@ function hideError() {
 }
 
 function setView(v) {
+  if (v === 'coverage' && state.view !== 'coverage') state.previousView = state.view;
   state.view = v;
   $('hero-view').classList.toggle('hidden',    v !== 'hero');
   $('loading-view').classList.toggle('hidden', v !== 'loading');
   $('results-view').classList.toggle('hidden', v !== 'results');
+  $('coverage-view').classList.toggle('hidden', v !== 'coverage');
+}
+
+async function showCoverage() {
+  setView('coverage');
+  $('coverage-loading').classList.remove('hidden');
+  $('coverage-error').classList.add('hidden');
+  $('coverage-content').classList.add('hidden');
+  try {
+    const res = await fetch(`${apiBase()}/api/v1/coverage`);
+    const report = await res.json();
+    if (!res.ok) throw new Error(report.error || 'Coverage report could not be loaded');
+    state.coverageEntries = report.entries || [];
+    $('coverage-subtitle').textContent = report.title || 'Current scanner coverage by success criterion.';
+    $('coverage-implemented').textContent = report.implemented || 0;
+    $('coverage-partial').textContent = report.partial || 0;
+    $('coverage-missing').textContent = report.not_implemented || 0;
+    $('coverage-total').textContent = state.coverageEntries.length;
+    $('coverage-updated').textContent = `Source: ${report.filename || 'coverage report'} · Updated ${new Date(report.updated_at).toLocaleString()}`;
+    renderCoverageRows();
+    $('coverage-content').classList.remove('hidden');
+  } catch (err) {
+    $('coverage-error').textContent = err.message;
+    $('coverage-error').classList.remove('hidden');
+  } finally {
+    $('coverage-loading').classList.add('hidden');
+  }
+}
+
+function renderCoverageRows() {
+  const query = ($('coverage-search')?.value || '').trim().toLowerCase();
+  const status = $('coverage-status-filter')?.value || 'all';
+  const entries = state.coverageEntries.filter(entry => {
+    const matchesStatus = status === 'all' || String(entry.status).toLowerCase() === status;
+    const haystack = [entry.sc, entry.title, entry.level, entry.status, entry.techniques, entry.implementation_detail].join(' ').toLowerCase();
+    return matchesStatus && (!query || haystack.includes(query));
+  });
+  const body = $('coverage-table-body');
+  body.innerHTML = entries.map(entry => {
+    const normalizedStatus = String(entry.status || '').toLowerCase().replace(/\s+/g, '-');
+    const detail = [entry.techniques, entry.implementation_detail].filter(Boolean).map(escapeHTML).join('<br><span class="coverage-detail">');
+    return `<tr>
+      <td data-label="SC"><strong>${escapeHTML(entry.sc || '')}</strong></td>
+      <td data-label="Criterion">${escapeHTML(entry.title || '')}</td>
+      <td data-label="Level">${escapeHTML(entry.level || '')}</td>
+      <td data-label="Status"><span class="coverage-status ${normalizedStatus}">${escapeHTML(entry.status || '')}</span></td>
+      <td data-label="Techniques / implementation">${detail || '—'}${detail.includes('coverage-detail') ? '</span>' : ''}</td>
+    </tr>`;
+  }).join('');
+  $('coverage-result-count').textContent = `Showing ${entries.length} of ${state.coverageEntries.length} criteria`;
 }
 
 // ─── Session / Token Management ───────────────────────────────
@@ -587,6 +649,219 @@ function downloadAIIssueBrief() {
   setTimeout(() => URL.revokeObjectURL(objectURL), 1000);
 }
 
+// ─── Downloadable HTML Report ─────────────────────────────────
+function buildUserReport(result) {
+  const summary    = result.summary || {};
+  const violations = result.violations || [];
+  const passes     = result.passes || [];
+
+  const score         = summary.score ?? 0;
+  const grade         = summary.grade ?? 'F';
+  const compliancePct = Number(summary.compliance_pct ?? summary.compliancePct ?? 0).toFixed(1);
+  const violCount     = summary.violation_count ?? summary.violationCount ?? violations.length;
+  const passCount     = summary.pass_count ?? summary.passCount ?? passes.length;
+  const incompleteCount = summary.incomplete_count ?? summary.incompleteCount ?? 0;
+  const wcagLevel    = summary.wcag_level || summary.level || 'AA';
+  const scannedAt    = result.scanned_at || result.scannedAt || new Date().toISOString();
+  const durationMs   = result.duration_ms || result.durationMs || 0;
+
+  const impactCounts = { critical: 0, serious: 0, moderate: 0, minor: 0 };
+  violations.forEach(v => { if (impactCounts[v.impact] !== undefined) impactCounts[v.impact]++; });
+
+  const gradeColors = { A: '#10b981', B: '#06b6d4', C: '#f59e0b', D: '#f97316', F: '#ef4444' };
+  const impactColors = { critical: '#ef4444', serious: '#f97316', moderate: '#eab308', minor: '#22c55e' };
+  const impactBgColors = { critical: '#fef2f2', serious: '#fff7ed', moderate: '#fefce8', minor: '#f0fdf4' };
+  const gradeColor = gradeColors[grade] || '#6366f1';
+
+  const esc = str => String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+
+  let violationsHTML = '';
+  if (violations.length === 0) {
+    violationsHTML = '<div style="text-align:center;padding:40px 20px;color:#6b7280;"><div style="font-size:2.5rem;margin-bottom:12px;">&#127881;</div><div style="font-size:1.1rem;font-weight:600;color:#10b981;margin-bottom:6px;">No violations found!</div><div>This page meets all checked WCAG criteria.</div></div>';
+  } else {
+    violations
+      .sort((a, b) => impactOrder(b.impact) - impactOrder(a.impact))
+      .forEach((v, idx) => {
+        const impact = v.impact || 'minor';
+        const color = impactColors[impact] || '#6b7280';
+        const bgColor = impactBgColors[impact] || '#f9fafb';
+        const nodes = v.nodes || [];
+        const wcagTags = (v.tags || []).filter(t => t.startsWith('wcag') && t.length <= 8).map(t => t.replace('wcag', 'WCAG ')).join(', ');
+
+        let nodesHTML = '';
+        nodes.slice(0, 5).forEach(n => {
+          const html = n.html ? esc(n.html) : '';
+          const summary = n.failureSummary || n.failure_summary || '';
+          nodesHTML += `<div style="background:#f9fafb;border:1px solid #e5e7eb;border-radius:6px;padding:8px 12px;margin-bottom:6px;font-family:'JetBrains Mono',monospace;font-size:0.78rem;color:#374151;word-break:break-all;white-space:pre-wrap;">${html}${summary ? '<div style="margin-top:4px;color:#6b7280;font-family:sans-serif;font-size:0.75rem;">' + esc(summary.replace(/^Fix (?:any|all) of the following:\s*/i, '')) + '</div>' : ''}</div>`;
+        });
+        if (nodes.length > 5) nodesHTML += `<p style="font-size:0.8rem;color:#9ca3af;">+${nodes.length - 5} more element(s)</p>`;
+
+        const ds = v.dev_suggestion || v.devSuggestion || null;
+        let suggestionHTML = '';
+        if (ds) {
+          const steps = (ds.fix_steps || []).map(s => `<li>${esc(s)}</li>`).join('');
+          suggestionHTML = `<div style="margin-top:12px;border:1px solid #e5e7eb;border-radius:8px;overflow:hidden;"><div style="background:#f5f3ff;padding:8px 12px;font-size:0.82rem;font-weight:600;color:#7c3aed;">&#128295; ${esc(ds.title || 'Developer Fix Suggestion')}</div><div style="padding:10px 14px;">`;
+          if (steps) suggestionHTML += `<ol style="margin:0 0 8px 16px;padding:0;font-size:0.8rem;color:#374151;line-height:1.7;">${steps}</ol>`;
+          if (ds.code_before || ds.code_after) {
+            suggestionHTML += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">';
+            if (ds.code_before) suggestionHTML += `<div><div style="font-size:0.7rem;font-weight:700;padding:4px 8px;background:#fef2f2;color:#ef4444;border-radius:4px 4px 0 0;">BEFORE</div><pre style="margin:0;padding:8px;background:#f9fafb;border:1px solid #e5e7eb;border-radius:0 0 4px 4px;font-size:0.72rem;white-space:pre-wrap;word-break:break-all;">${esc(ds.code_before)}</pre></div>`;
+            if (ds.code_after) suggestionHTML += `<div><div style="font-size:0.7rem;font-weight:700;padding:4px 8px;background:#f0fdf4;color:#16a34a;border-radius:4px 4px 0 0;">AFTER</div><pre style="margin:0;padding:8px;background:#f9fafb;border:1px solid #e5e7eb;border-radius:0 0 4px 4px;font-size:0.72rem;white-space:pre-wrap;word-break:break-all;">${esc(ds.code_after)}</pre></div>`;
+            suggestionHTML += '</div>';
+          }
+          suggestionHTML += '</div></div>';
+        }
+
+        violationsHTML += `
+          <div style="border:1px solid #e5e7eb;border-left:4px solid ${color};border-radius:8px;padding:16px 20px;margin-bottom:12px;background:#fff;page-break-inside:avoid;">
+            <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:8px;">
+              <div style="display:flex;align-items:center;gap:10px;">
+                <span style="display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;border-radius:50%;background:${color};color:#fff;font-size:0.7rem;font-weight:700;flex-shrink:0;">${idx + 1}</span>
+                <span style="font-size:0.9rem;font-weight:600;color:#1f2937;">${esc(v.id || '')}</span>
+              </div>
+              <div style="display:flex;gap:8px;align-items:center;">
+                ${wcagTags ? `<span style="font-size:0.7rem;padding:2px 8px;border-radius:99px;background:#eff6ff;color:#2563eb;">${wcagTags}</span>` : ''}
+                <span style="font-size:0.72rem;font-weight:600;padding:3px 10px;border-radius:99px;text-transform:uppercase;background:${bgColor};color:${color};">${impact}</span>
+              </div>
+            </div>
+            <p style="font-size:0.85rem;color:#4b5563;margin:0 0 6px;">${esc(v.description || v.help || '')}</p>
+            ${v.help_url || v.helpUrl ? `<a href="${esc(v.help_url || v.helpUrl)}" style="font-size:0.8rem;color:#6366f1;" target="_blank" rel="noopener">${esc(v.help || 'WCAG reference')} &#8599;</a>` : ''}
+            ${nodes.length > 0 ? `<div style="margin-top:10px;"><div style="font-size:0.78rem;font-weight:600;color:#6b7280;margin-bottom:6px;">Affected Elements (${nodes.length})</div>${nodesHTML}</div>` : ''}
+            ${suggestionHTML}
+          </div>`;
+      });
+  }
+
+  let passesHTML = '';
+  if (passes.length > 0) {
+    const passItems = passes.map(p => {
+      const id = typeof p === 'string' ? p : (p.id || '');
+      return `<span style="display:inline-block;background:#f0fdf4;border:1px solid #bbf7d0;color:#16a34a;border-radius:6px;padding:4px 10px;font-size:0.78rem;font-family:monospace;">${esc(id)}</span>`;
+    }).join(' ');
+    passesHTML = `
+      <div style="margin-top:32px;page-break-before:auto;">
+        <h2 style="font-size:1.1rem;font-weight:600;color:#374151;border-bottom:2px solid #e5e7eb;padding-bottom:8px;margin-bottom:14px;">Passing Rules (${passCount})</h2>
+        <div style="display:flex;flex-wrap:wrap;gap:6px;">${passItems}</div>
+      </div>`;
+  }
+
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Accessibility Report - ${esc(result.url || '')}</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif; background: #fff; color: #1f2937; line-height: 1.6; }
+  .container { max-width: 900px; margin: 0 auto; padding: 0 24px; }
+  @media print {
+    body { font-size: 11pt; }
+    .container { max-width: 100%; padding: 0; }
+    .no-print { display: none !important; }
+    a[href]::after { content: " (" attr(href) ")"; font-size: 0.8em; color: #6b7280; }
+  }
+</style>
+</head>
+<body>
+<div class="container">
+
+  <!-- Header -->
+  <div style="border-bottom:2px solid #e5e7eb;padding:32px 0 24px;">
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:4px;">
+      <span style="font-size:1.8rem;">&#9855;</span>
+      <h1 style="font-size:1.5rem;font-weight:700;color:#111827;">Accessibility Report</h1>
+    </div>
+    <p style="font-size:0.9rem;color:#6366f1;word-break:break-all;margin-top:4px;">${esc(result.url || '')}</p>
+    <p style="font-size:0.78rem;color:#9ca3af;margin-top:4px;">Scanned ${new Date(scannedAt).toLocaleString()} &middot; WCAG ${wcagLevel}${durationMs ? ` &middot; ${(durationMs / 1000).toFixed(1)}s` : ''}</p>
+  </div>
+
+  <!-- Score Cards -->
+  <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(130px, 1fr));gap:14px;padding:24px 0;">
+    <div style="text-align:center;padding:20px;border-radius:12px;border:1px solid #e5e7eb;background:#fafafa;">
+      <div style="font-size:2.2rem;font-weight:700;color:${gradeColor};">${score}</div>
+      <div style="font-size:0.72rem;text-transform:uppercase;letter-spacing:0.05em;color:#9ca3af;margin-top:4px;">Score (0-100)</div>
+    </div>
+    <div style="text-align:center;padding:20px;border-radius:12px;border:1px solid #e5e7eb;background:#fafafa;">
+      <div style="font-size:2.2rem;font-weight:700;color:${gradeColor};">${grade}</div>
+      <div style="font-size:0.72rem;text-transform:uppercase;letter-spacing:0.05em;color:#9ca3af;margin-top:4px;">Grade</div>
+    </div>
+    <div style="text-align:center;padding:20px;border-radius:12px;border:1px solid #e5e7eb;background:#fafafa;">
+      <div style="font-size:2.2rem;font-weight:700;color:#ef4444;">${violCount}</div>
+      <div style="font-size:0.72rem;text-transform:uppercase;letter-spacing:0.05em;color:#9ca3af;margin-top:4px;">Violations</div>
+    </div>
+    <div style="text-align:center;padding:20px;border-radius:12px;border:1px solid #e5e7eb;background:#fafafa;">
+      <div style="font-size:2.2rem;font-weight:700;color:#10b981;">${passCount}</div>
+      <div style="font-size:0.72rem;text-transform:uppercase;letter-spacing:0.05em;color:#9ca3af;margin-top:4px;">Passes</div>
+    </div>
+    <div style="text-align:center;padding:20px;border-radius:12px;border:1px solid #e5e7eb;background:#fafafa;">
+      <div style="font-size:2.2rem;font-weight:700;color:#6366f1;">${compliancePct}%</div>
+      <div style="font-size:0.72rem;text-transform:uppercase;letter-spacing:0.05em;color:#9ca3af;margin-top:4px;">Compliance</div>
+    </div>
+  </div>
+
+  <!-- Compliance Bar -->
+  <div style="margin-bottom:24px;">
+    <div style="background:#e5e7eb;border-radius:99px;height:10px;overflow:hidden;">
+      <div style="height:100%;border-radius:99px;background:linear-gradient(90deg,#6366f1,#8b5cf6);width:${compliancePct}%;"></div>
+    </div>
+  </div>
+
+  <!-- Impact Breakdown -->
+  <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:28px;">
+    <div style="text-align:center;padding:12px;border-radius:8px;background:#fef2f2;border:1px solid #fecaca;">
+      <div style="font-size:1.4rem;font-weight:700;color:#ef4444;">${impactCounts.critical}</div>
+      <div style="font-size:0.72rem;color:#b91c1c;">Critical</div>
+    </div>
+    <div style="text-align:center;padding:12px;border-radius:8px;background:#fff7ed;border:1px solid #fed7aa;">
+      <div style="font-size:1.4rem;font-weight:700;color:#f97316;">${impactCounts.serious}</div>
+      <div style="font-size:0.72rem;color:#c2410c;">Serious</div>
+    </div>
+    <div style="text-align:center;padding:12px;border-radius:8px;background:#fefce8;border:1px solid #fef08a;">
+      <div style="font-size:1.4rem;font-weight:700;color:#eab308;">${impactCounts.moderate}</div>
+      <div style="font-size:0.72rem;color:#a16207;">Moderate</div>
+    </div>
+    <div style="text-align:center;padding:12px;border-radius:8px;background:#f0fdf4;border:1px solid #bbf7d0;">
+      <div style="font-size:1.4rem;font-weight:700;color:#22c55e;">${impactCounts.minor}</div>
+      <div style="font-size:0.72rem;color:#15803d;">Minor</div>
+    </div>
+  </div>
+
+  <!-- Violations -->
+  <div>
+    <h2 style="font-size:1.1rem;font-weight:600;color:#374151;border-bottom:2px solid #e5e7eb;padding-bottom:8px;margin-bottom:14px;">Violations (${violCount})</h2>
+    ${violationsHTML}
+  </div>
+
+  <!-- Passes -->
+  ${passesHTML}
+
+  <!-- Footer -->
+  <div style="text-align:center;padding:32px 0;font-size:0.75rem;color:#9ca3af;border-top:1px solid #e5e7eb;margin-top:32px;">
+    Generated by AccessScan &middot; ${new Date(scannedAt).toLocaleString()}
+  </div>
+
+</div>
+</body>
+</html>`;
+}
+
+function downloadUserReport() {
+  if (!state.scanResult) return;
+  const html = buildUserReport(state.scanResult);
+  const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
+  const objectURL = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  let host = 'scanned-page';
+  try { host = new URL(state.scanResult.url).hostname || host; } catch (_) { /* use fallback */ }
+  link.href = objectURL;
+  link.download = `${host.replace(/[^a-z0-9.-]+/gi, '-')}-accessibility-report.html`;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(objectURL), 1000);
+}
+
 // ─── Admin Panel ───────────────────────────────────────────────
 // Step 1: 5-click the dot → show password prompt modal
 // Step 2: enter ADMIN_PASSWORD → verify via POST /api/v1/admin/verify
@@ -655,7 +930,9 @@ async function submitAdminPassword() {
 
     // Success — unlock admin
     state.adminUnlocked = true;
+    state.adminToken = data.admin_token;
     sessionStorage.setItem(LS_KEY_ADMIN_AUTH, '1');
+    sessionStorage.setItem(LS_KEY_ADMIN_TOKEN, data.admin_token);
     closeAdminPasswordModal();
     openAdminDrawer();
   } catch (err) {
@@ -665,12 +942,45 @@ async function submitAdminPassword() {
   }
 }
 
+async function uploadCoverageReport() {
+  const input = $('coverage-file-input');
+  const status = $('coverage-upload-status');
+  const button = $('coverage-upload-btn');
+  const file = input?.files?.[0];
+  if (!file) { status.textContent = 'Choose an .xlsx file first.'; return; }
+  if (!file.name.toLowerCase().endsWith('.xlsx')) { status.textContent = 'Only .xlsx files are accepted.'; return; }
+  const form = new FormData();
+  form.append('report', file);
+  button.disabled = true;
+  status.textContent = 'Validating and uploading…';
+  try {
+    const res = await fetch(`${apiBase()}/api/v1/admin/coverage`, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${state.adminToken || ''}` },
+      body: form,
+    });
+    const text = await res.text();
+    let data;
+    try { data = JSON.parse(text); } catch (_) {
+      throw new Error(res.status === 429 ? 'Rate limited — please wait a minute and try again.' : `Server error (${res.status}): ${text.substring(0, 100)}`);
+    }
+    if (!res.ok) throw new Error(res.status === 401 ? 'Admin session expired. Unlock admin settings again.' : (data.error || 'Upload failed'));
+    status.textContent = `Uploaded ${data.entries?.length || 0} coverage entries successfully.`;
+    input.value = '';
+    state.coverageEntries = data.entries || [];
+  } catch (err) {
+    status.textContent = err.message;
+  } finally {
+    button.disabled = false;
+  }
+}
+
 function openAdminDrawer() {
   const overlay = $('admin-overlay');
   const drawer  = $('admin-drawer');
   const apiInput = $('admin-api-base');
 
-  if (apiInput) apiInput.value = localStorage.getItem(LS_KEY_API_BASE) || DEFAULT_API_BASE;
+  if (apiInput) apiInput.value = localStorage.getItem(LS_KEY_API_BASE) || apiBase();
   updateAdminTokenStatus();
 
   overlay.classList.add('open');
@@ -753,7 +1063,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // ── New Scan button ──────────────────────────────
   $('new-scan-btn')?.addEventListener('click', () => { setView('hero'); urlInput?.focus(); });
+  $('download-report-btn')?.addEventListener('click', downloadUserReport);
   $('download-md-btn')?.addEventListener('click', downloadAIIssueBrief);
+  $('coverage-menu-btn')?.addEventListener('click', showCoverage);
+  $('coverage-back-btn')?.addEventListener('click', () => setView(state.previousView === 'coverage' ? 'hero' : state.previousView));
+  $('coverage-search')?.addEventListener('input', renderCoverageRows);
+  $('coverage-status-filter')?.addEventListener('change', renderCoverageRows);
 
   // ── Admin trigger (5 clicks on hidden dot) ───────
   $('admin-trigger')?.addEventListener('click', triggerAdminClick);
@@ -771,6 +1086,7 @@ document.addEventListener('DOMContentLoaded', () => {
   $('admin-overlay')?.addEventListener('click', closeAdminDrawer);
   $('admin-drawer-close')?.addEventListener('click', closeAdminDrawer);
   $('admin-save-btn')?.addEventListener('click', saveAdminSettings);
+  $('coverage-upload-btn')?.addEventListener('click', uploadCoverageReport);
   $('admin-refresh-token')?.addEventListener('click', async () => {
     localStorage.removeItem(LS_KEY_TOKEN);
     localStorage.removeItem(LS_KEY_TOKEN_EXP);
@@ -791,6 +1107,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // Restore admin session if unlocked earlier this browser session
   if (sessionStorage.getItem(LS_KEY_ADMIN_AUTH) === '1') {
     state.adminUnlocked = true;
+    state.adminToken = sessionStorage.getItem(LS_KEY_ADMIN_TOKEN);
   }
 
   // Eagerly fetch a session token on page load (fully transparent to the user)
