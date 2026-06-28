@@ -67,13 +67,16 @@ func (h *Handler) Scan(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusForbidden, "scanning private/internal addresses is not allowed", "")
 		return
 	}
-	ctx, cancel := context.WithTimeout(r.Context(), h.ScanTimeout)
+	scanTimeout := h.ScanTimeout
+	if req.Depth > 0 {
+		scanTimeout *= 4
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), scanTimeout)
 	defer cancel()
-	h.Logger.Info("starting scan", zap.String("url", req.URL), zap.String("wcag", wcagLevel))
+	h.Logger.Info("starting scan", zap.String("url", req.URL), zap.String("wcag", wcagLevel), zap.Int("depth", req.Depth))
 	result, err := h.Scanner.Scan(ctx, req.URL, wcagLevel, req.Depth)
 	if err != nil {
 		h.Logger.Error("scan failed", zap.String("url", req.URL), zap.Error(err))
-		writeError(w, http.StatusInternalServerError, "scan failed", err.Error())
 		return
 	}
 	// Generate visual HTML report if requested

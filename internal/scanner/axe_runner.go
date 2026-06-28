@@ -126,10 +126,11 @@ func (a *AxeRunner) Scan(ctx context.Context, url string, wcagLevel string, dept
             if blockedFlag && !config.GetAllowPrivateScans() {
                 continue
             }
-            // Perform recursive scan with depth 0
-            embedRes, err := a.Scan(ctx, link, wcagLevel, 0)
+            // Per-link timeout: 90 seconds each, won't block remaining links
+            linkCtx, linkCancel := context.WithTimeout(ctx, 90*time.Second)
+            embedRes, err := a.Scan(linkCtx, link, wcagLevel, 0)
+            linkCancel()
             if err != nil {
-                // Log and skip problematic link
                 continue
             }
             if embedRes != nil {

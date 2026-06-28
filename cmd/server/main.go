@@ -76,7 +76,7 @@ func main() {
 	srv := &http.Server{
 		Handler:      router,
 		ReadTimeout:  15 * time.Second,
-		WriteTimeout: time.Duration(cfg.ScanTimeoutSeconds+10) * time.Second,
+		WriteTimeout: time.Duration(cfg.ScanTimeoutSeconds*4+30) * time.Second,
 		IdleTimeout:  60 * time.Second,
 	}
 
