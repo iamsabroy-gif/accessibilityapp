@@ -189,7 +189,7 @@ async function runScan(url, wcagLevel, depth = 0) {
   setView('loading');
   $('loading-url').textContent = url;
   const depthMsg = $('loading-depth-msg');
-  if (depthMsg) depthMsg.textContent = depth === 1 ? 'Following internal links…' : '';
+  if (depthMsg) depthMsg.textContent = depth === 1 ? 'Scanning main page…' : '';
   hideError();
 
   const ok = await ensureToken();
@@ -206,7 +206,6 @@ async function runScan(url, wcagLevel, depth = 0) {
     });
 
     if (res.status === 401) {
-      // Token rejected — clear and retry once
       localStorage.removeItem(LS_KEY_TOKEN);
       localStorage.removeItem(LS_KEY_TOKEN_EXP);
       state.token = null;
@@ -219,13 +218,191 @@ async function runScan(url, wcagLevel, depth = 0) {
     if (!res.ok) throw new Error(data.error || 'Scan failed');
 
     state.scanResult = data;
+    data.embedded_results = [];
     renderResults(data);
     setView('results');
     scheduleTokenRenewal();
+
+    // If depth=1, scan discovered links in parallel from the frontend
+    const links = data.discovered_links || [];
+    if (depth === 1 && links.length > 0) {
+      scanLinksInParallel(links, wcagLevel);
+    }
   } catch (err) {
     showError(`Scan error: ${err.message}`);
     setView('hero');
   }
+}
+
+async function scanLinksInParallel(links, wcagLevel) {
+  const TIMEOUT_MS = 3 * 60 * 1000;
+  const linkedSection = $('linked-pages-section');
+  const linkedList    = $('linked-pages-list');
+  const linkedCount   = $('linked-pages-count');
+  if (!linkedSection || !linkedList) return;
+
+  // Show section with loading placeholders
+  linkedCount.textContent = links.length;
+  linkedList.innerHTML = '';
+  const cardStates = links.map((linkUrl, i) => {
+    const card = document.createElement('article');
+    card.className = 'linked-page-card linked-page-loading';
+    card.innerHTML = `
+      <div class="linked-page-header">
+        <div class="linked-page-score linked-page-score-pending">
+          <span class="linked-page-grade">…</span>
+        </div>
+        <div class="linked-page-info">
+          <div class="linked-page-url" title="${escapeHTML(linkUrl)}">${escapeHTML(linkUrl)}</div>
+          <div class="linked-page-meta">
+            <span class="linked-page-stat scanning">Scanning…</span>
+          </div>
+        </div>
+      </div>`;
+    linkedList.appendChild(card);
+    return { url: linkUrl, card, index: i, done: false };
+  });
+  linkedSection.classList.remove('hidden');
+
+  const startTime = Date.now();
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), TIMEOUT_MS);
+
+  const scanOne = async (entry) => {
+    try {
+      await ensureToken();
+      const res = await fetch(`${apiBase()}/api/v1/scan`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${state.token}`,
+        },
+        body: JSON.stringify({ url: entry.url, wcag_level: wcagLevel, depth: 0 }),
+        signal: controller.signal,
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Scan failed');
+      entry.done = true;
+      renderLinkedPageCard(entry.card, data);
+      // Add to embedded results for Excel export
+      if (state.scanResult) {
+        if (!state.scanResult.embedded_results) state.scanResult.embedded_results = [];
+        state.scanResult.embedded_results.push(data);
+      }
+    } catch (err) {
+      entry.done = true;
+      if (controller.signal.aborted) {
+        renderLinkedPageTimeout(entry.card, entry.url);
+      } else {
+        renderLinkedPageError(entry.card, entry.url, err.message);
+      }
+    }
+  };
+
+  await Promise.allSettled(cardStates.map(e => scanOne(e)));
+  clearTimeout(timeout);
+
+  // Flag any that didn't finish (shouldn't happen since Promise.allSettled waits, but safety net)
+  cardStates.filter(e => !e.done).forEach(e => renderLinkedPageTimeout(e.card, e.url));
+}
+
+function renderLinkedPageCard(card, sub) {
+  const s     = sub.summary || {};
+  const sc    = s.score ?? 0;
+  const gr    = s.grade || 'F';
+  const subViols = sub.violations || [];
+  const viol  = s.violation_count ?? subViols.length;
+  const pass  = s.pass_count ?? (sub.passes || []).length;
+  const comp  = s.compliance_pct ?? 0;
+  const colors = { A:'#10b981', B:'#06b6d4', C:'#f59e0b', D:'#f97316', F:'#f43f5e' };
+  const color = colors[gr] || '#6366f1';
+
+  card.className = 'linked-page-card';
+  card.innerHTML = '';
+
+  const header = document.createElement('div');
+  header.className = 'linked-page-header';
+  header.setAttribute('role', 'button');
+  header.setAttribute('aria-expanded', 'false');
+  header.tabIndex = 0;
+  header.innerHTML = `
+    <div class="linked-page-score" style="border-color:${color}">
+      <span class="linked-page-grade grade-${gr}">${gr}</span>
+      <span class="linked-page-score-num">${sc}</span>
+    </div>
+    <div class="linked-page-info">
+      <div class="linked-page-url" title="${escapeHTML(sub.url || '')}">${escapeHTML(sub.url || '')}</div>
+      <div class="linked-page-meta">
+        <span class="linked-page-stat viol">${viol} violation${viol !== 1 ? 's' : ''}</span>
+        <span class="linked-page-stat pass">${pass} passed</span>
+        <span class="linked-page-stat comp">${comp.toFixed(1)}% compliant</span>
+      </div>
+    </div>
+    <svg class="linked-page-chevron" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+      <polyline points="6 9 12 15 18 9"/>
+    </svg>`;
+
+  const body = document.createElement('div');
+  body.className = 'linked-page-body';
+  body.style.display = 'none';
+
+  if (subViols.length > 0) {
+    const violTitle = document.createElement('div');
+    violTitle.className = 'linked-page-body-title';
+    violTitle.textContent = `Violations (${subViols.length})`;
+    body.appendChild(violTitle);
+    subViols
+      .sort((a, b) => impactOrder(b.impact) - impactOrder(a.impact))
+      .forEach(v => body.appendChild(buildViolationCard(v)));
+  } else {
+    const noViols = document.createElement('p');
+    noViols.className = 'linked-page-no-viols';
+    noViols.textContent = 'No violations found on this page.';
+    body.appendChild(noViols);
+  }
+
+  const toggle = () => {
+    const isOpen = card.classList.toggle('open');
+    body.style.display = isOpen ? 'block' : 'none';
+    header.setAttribute('aria-expanded', String(isOpen));
+  };
+  header.addEventListener('click', toggle);
+  header.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(); } });
+
+  card.appendChild(header);
+  card.appendChild(body);
+}
+
+function renderLinkedPageTimeout(card, linkUrl) {
+  card.className = 'linked-page-card linked-page-flagged';
+  card.innerHTML = `
+    <div class="linked-page-header">
+      <div class="linked-page-score linked-page-score-timeout">
+        <span class="linked-page-grade">!</span>
+      </div>
+      <div class="linked-page-info">
+        <div class="linked-page-url" title="${escapeHTML(linkUrl)}">${escapeHTML(linkUrl)}</div>
+        <div class="linked-page-meta">
+          <span class="linked-page-stat timeout">Timed out — exceeded 3 minute limit</span>
+        </div>
+      </div>
+    </div>`;
+}
+
+function renderLinkedPageError(card, linkUrl, errMsg) {
+  card.className = 'linked-page-card linked-page-flagged';
+  card.innerHTML = `
+    <div class="linked-page-header">
+      <div class="linked-page-score linked-page-score-error">
+        <span class="linked-page-grade">✕</span>
+      </div>
+      <div class="linked-page-info">
+        <div class="linked-page-url" title="${escapeHTML(linkUrl)}">${escapeHTML(linkUrl)}</div>
+        <div class="linked-page-meta">
+          <span class="linked-page-stat error">${escapeHTML(errMsg)}</span>
+        </div>
+      </div>
+    </div>`;
 }
 
 // ─── Render Results ────────────────────────────────────────────
@@ -311,87 +488,9 @@ function renderResults(result) {
       .forEach(v => violList.appendChild(buildViolationCard(v)));
   }
 
-  // ── Linked Pages (depth=1 embedded results) ───
+  // ── Linked Pages — reset; populated by scanLinksInParallel() ──
   const linkedSection = $('linked-pages-section');
-  const linkedList    = $('linked-pages-list');
-  const linkedCount   = $('linked-pages-count');
-  const embedded      = result.embedded_results || [];
-  if (linkedSection && linkedList) {
-    linkedList.innerHTML = '';
-    if (embedded.length > 0) {
-      linkedCount.textContent = embedded.length;
-      embedded.forEach(sub => {
-        const s     = sub.summary || {};
-        const sc    = s.score ?? 0;
-        const gr    = s.grade || 'F';
-        const subViols = sub.violations || [];
-        const viol  = s.violation_count ?? subViols.length;
-        const pass  = s.pass_count ?? (sub.passes || []).length;
-        const comp  = s.compliance_pct ?? 0;
-        const colors = { A:'#10b981', B:'#06b6d4', C:'#f59e0b', D:'#f97316', F:'#f43f5e' };
-        const color = colors[gr] || '#6366f1';
-
-        const card = document.createElement('article');
-        card.className = 'linked-page-card';
-
-        const header = document.createElement('div');
-        header.className = 'linked-page-header';
-        header.setAttribute('role', 'button');
-        header.setAttribute('aria-expanded', 'false');
-        header.tabIndex = 0;
-        header.innerHTML = `
-          <div class="linked-page-score" style="border-color:${color}">
-            <span class="linked-page-grade grade-${gr}">${gr}</span>
-            <span class="linked-page-score-num">${sc}</span>
-          </div>
-          <div class="linked-page-info">
-            <div class="linked-page-url" title="${escapeHTML(sub.url || '')}">${escapeHTML(sub.url || '')}</div>
-            <div class="linked-page-meta">
-              <span class="linked-page-stat viol">${viol} violation${viol !== 1 ? 's' : ''}</span>
-              <span class="linked-page-stat pass">${pass} passed</span>
-              <span class="linked-page-stat comp">${comp.toFixed(1)}% compliant</span>
-            </div>
-          </div>
-          <svg class="linked-page-chevron" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
-            <polyline points="6 9 12 15 18 9"/>
-          </svg>`;
-
-        const body = document.createElement('div');
-        body.className = 'linked-page-body';
-        body.style.display = 'none';
-
-        if (subViols.length > 0) {
-          const violTitle = document.createElement('div');
-          violTitle.className = 'linked-page-body-title';
-          violTitle.textContent = `Violations (${subViols.length})`;
-          body.appendChild(violTitle);
-          subViols
-            .sort((a, b) => impactOrder(b.impact) - impactOrder(a.impact))
-            .forEach(v => body.appendChild(buildViolationCard(v)));
-        } else {
-          const noViols = document.createElement('p');
-          noViols.className = 'linked-page-no-viols';
-          noViols.textContent = 'No violations found on this page.';
-          body.appendChild(noViols);
-        }
-
-        const toggle = () => {
-          const isOpen = card.classList.toggle('open');
-          body.style.display = isOpen ? 'block' : 'none';
-          header.setAttribute('aria-expanded', String(isOpen));
-        };
-        header.addEventListener('click', toggle);
-        header.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(); } });
-
-        card.appendChild(header);
-        card.appendChild(body);
-        linkedList.appendChild(card);
-      });
-      linkedSection.classList.remove('hidden');
-    } else {
-      linkedSection.classList.add('hidden');
-    }
-  }
+  if (linkedSection) linkedSection.classList.add('hidden');
 
   // ── Page Screenshot ───────────────────────────
   const screenshotSection = $('screenshot-section');

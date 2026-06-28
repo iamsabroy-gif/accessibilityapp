@@ -100,20 +100,18 @@ func (a *AxeRunner) Scan(ctx context.Context, url string, wcagLevel string, dept
     // Map base result
     result := mapToScanResult(raw, url, wcagLevel, time.Since(start).Milliseconds())
 
-    // If depth == 1, process embedded links (max 10)
+    // If depth == 1, return discovered links for frontend-driven parallel scanning
     if depth == 1 && len(raw.Links) > 0 {
         maxLinks := 10
-        embedded := make([]models.ScanResult, 0, maxLinks)
-        for i, link := range raw.Links {
-            if i >= maxLinks {
+        validLinks := make([]string, 0, maxLinks)
+        for _, link := range raw.Links {
+            if len(validLinks) >= maxLinks {
                 break
             }
-            // Basic validation: scheme http/https and non-empty host
             u, err := neturl.Parse(link)
             if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
                 continue
             }
-            // Avoid private URLs similar to main validation
             lower := strings.ToLower(link)
             blocked := []string{"localhost", "127.", "10.", "192.168.", "172.16.", "0.0.0.0", "::1"}
             blockedFlag := false
@@ -126,29 +124,9 @@ func (a *AxeRunner) Scan(ctx context.Context, url string, wcagLevel string, dept
             if blockedFlag && !config.GetAllowPrivateScans() {
                 continue
             }
-            // Per-link timeout: 90 seconds each, won't block remaining links
-            linkCtx, linkCancel := context.WithTimeout(ctx, 90*time.Second)
-            embedRes, err := a.Scan(linkCtx, link, wcagLevel, 0)
-            linkCancel()
-            if err != nil {
-                continue
-            }
-            if embedRes != nil {
-                embedded = append(embedded, *embedRes)
-            }
+            validLinks = append(validLinks, link)
         }
-        result.EmbeddedResults = embedded
-
-        // Compute site-level AudioEye score across all pages
-        if result.AudioEye != nil && len(embedded) > 0 {
-            allScores := []int{result.AudioEye.Score}
-            for _, er := range embedded {
-                if er.AudioEye != nil {
-                    allScores = append(allScores, er.AudioEye.Score)
-                }
-            }
-            result.AudioEye.SiteScore = scoring.CalculateAudioEyeSite(allScores, nil)
-        }
+        result.DiscoveredLinks = validLinks
     }
 
     return result, nil
