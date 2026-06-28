@@ -82,12 +82,17 @@ const tags = tagMap[wcagLevel.toUpperCase()] || tagMap['AA'];
     // Pre-navigation injection so axe is present from page load
     await page.evaluateOnNewDocument(axeSrc);
 
-    // Navigate to the target page
+    // Navigate to the target page — try networkidle2 first, fall back to domcontentloaded
     try {
-      await page.goto(url, { waitUntil: 'networkidle2', timeout: 60000 });
-    } catch (e) {
-      console.log(JSON.stringify({ error: 'page navigation failed', details: e.message }));
-      process.exit(1);
+      await page.goto(url, { waitUntil: 'networkidle2', timeout: 30000 });
+    } catch (_) {
+      try {
+        await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
+        await new Promise(r => setTimeout(r, 2000));
+      } catch (e) {
+        console.log(JSON.stringify({ error: 'page navigation failed', details: e.message }));
+        process.exit(1);
+      }
     }
 
     // Post-navigation injection as a fallback (evaluate the source directly)
