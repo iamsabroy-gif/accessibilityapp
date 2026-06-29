@@ -73,6 +73,9 @@ COPY --from=go-builder /app/server ./server
 # Copy the frontend static files
 COPY frontend/ ./frontend/
 
+# Copy the WCAG coverage report (if present)
+COPY wcag_coverage_report.xls[x] ./
+
 # ── Security: run as a non-root user ─────────────────────────────────────────
 RUN groupadd -r appuser \
  && useradd -r -g appuser -G audio,video appuser \
@@ -84,7 +87,7 @@ ENV PORT=8080 \
     NODE_BIN=node \
     AXE_RUNNER_SCRIPT=scripts/axe_runner.js \
     WCAG_LEVEL=AA \
-    SCAN_TIMEOUT_SECONDS=60 \
+    SCAN_TIMEOUT_SECONDS=180 \
     MAX_CONCURRENT_SCANS=3
 
 EXPOSE 8080

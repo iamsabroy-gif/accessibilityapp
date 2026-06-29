@@ -15,7 +15,8 @@ node_modules
 
 # Analysis / planning docs (not needed at runtime)
 *.md
-*.xlsx
+# Keep wcag_coverage_report.xlsx (needed at runtime)
+wcag_scanner_implementation_matrix.xlsx
 *.numbers
 wcag_1_3_2_*.js
 
