@@ -10,7 +10,6 @@
 
 // ─── Constants ────────────────────────────────────────────────
 const DEFAULT_API_BASE  = 'https://accessibilityapp-bxzn.onrender.com';
-const LS_KEY_API_BASE   = 'wacs_api_base';
 const LS_KEY_TOKEN      = 'wacs_token';
 const LS_KEY_TOKEN_EXP  = 'wacs_token_exp';
 const LS_KEY_ADMIN_AUTH = 'wacs_admin_authed'; // flag: admin is unlocked this session
@@ -48,14 +47,8 @@ function isLocalHost() {
 
 function apiBase() {
   if (isLocalHost()) {
-    const stored = localStorage.getItem(LS_KEY_API_BASE);
-    if (stored && (stored.includes('localhost') || stored.includes('127.0.0.1'))) {
-      return stored.replace(/\/$/, '');
-    }
     return window.location.hostname ? window.location.origin : 'http://localhost:8080';
   }
-  const stored = localStorage.getItem(LS_KEY_API_BASE);
-  if (stored) return stored.replace(/\/$/, '');
   return DEFAULT_API_BASE;
 }
 
@@ -1346,9 +1339,7 @@ function setScanMode(mode) {
 function openAdminDrawer() {
   const overlay = $('admin-overlay');
   const drawer  = $('admin-drawer');
-  const apiInput = $('admin-api-base');
 
-  if (apiInput) apiInput.value = localStorage.getItem(LS_KEY_API_BASE) || apiBase();
   updateScanModeToggle();
   updateAdminTokenStatus();
 
@@ -1384,33 +1375,7 @@ function updateAdminTokenStatus() {
   }
 }
 
-async function saveAdminSettings() {
-  const apiInput = $('admin-api-base');
-  const saveBtn  = $('admin-save-btn');
-  const newBase  = (apiInput?.value || DEFAULT_API_BASE).trim().replace(/\/$/, '');
 
-  localStorage.setItem(LS_KEY_API_BASE, newBase);
-
-  // Clear old token so next scan gets one from the new base
-  localStorage.removeItem(LS_KEY_TOKEN);
-  localStorage.removeItem(LS_KEY_TOKEN_EXP);
-  state.token = null;
-
-  saveBtn.textContent = 'Verifying connection…';
-  saveBtn.disabled    = true;
-
-  const ok = await ensureToken();
-  updateAdminTokenStatus();
-
-  saveBtn.textContent = ok ? '✓ Saved & Connected' : '✗ Could not reach API';
-  saveBtn.disabled    = false;
-
-  if (ok) {
-    setTimeout(() => { closeAdminDrawer(); saveBtn.textContent = 'Save Settings'; scheduleTokenRenewal(); }, 1200);
-  } else {
-    setTimeout(() => { saveBtn.textContent = 'Save Settings'; }, 3000);
-  }
-}
 
 // ─── Event Wiring ──────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', () => {
@@ -1454,7 +1419,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // ── Admin drawer ─────────────────────────────────
   $('admin-overlay')?.addEventListener('click', closeAdminDrawer);
   $('admin-drawer-close')?.addEventListener('click', closeAdminDrawer);
-  $('admin-save-btn')?.addEventListener('click', saveAdminSettings);
+
   $('scan-mode-serial')?.addEventListener('click', () => setScanMode('serial'));
   $('scan-mode-parallel')?.addEventListener('click', () => setScanMode('parallel'));
   $('coverage-upload-btn')?.addEventListener('click', uploadCoverageReport);

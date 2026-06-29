@@ -386,18 +386,6 @@
         <span id="token-status-text" class="token-status-text">Checking…</span>
       </div>
 
-      <!-- API Base URL (the only thing admins need to configure) -->
-      <div class="form-field">
-        <label for="admin-api-base">API Base URL</label>
-        <input
-          id="admin-api-base"
-          type="url"
-          placeholder="https://accessibilityapp-bxzn.onrender.com"
-          autocomplete="off"
-          spellcheck="false"
-        />
-        <p class="field-hint">The base URL of the deployed Go API. Change this only if you're running a self-hosted instance on a different URL.</p>
-      </div>
 
       <div class="admin-toggle-section">
         <label class="form-label">Link Scan Mode</label>
@@ -408,7 +396,7 @@
         <p class="field-hint">Serial scans links one at a time (low memory). Parallel scans all at once (faster, needs more RAM).</p>
       </div>
 
-      <button id="admin-save-btn" class="btn-primary" type="button">Save Settings</button>
+
       <button id="admin-refresh-token" class="btn-secondary" type="button">Force Token Refresh</button>
 
       <div class="admin-upload-section">
