@@ -33,7 +33,7 @@
  *   • 3.3.1 – error-identification: aria-invalid + accessible error message
  */
 
-const puppeteer = require('puppeteer');
+const puppeteer = require('puppeteer-core');
 const { axe } = require('axe-core');
 const fs = require('fs');
 
@@ -55,9 +55,22 @@ const tags = tagMap[wcagLevel.toUpperCase()] || tagMap['AA'];
 (async () => {
   let browser;
   try {
+    let execPath = process.env.CHROMIUM_PATH || '/usr/bin/chromium-browser';
+    if (!process.env.CHROMIUM_PATH && process.platform === 'darwin') {
+      execPath = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
+    }
+
     browser = await puppeteer.launch({
+      executablePath: execPath,
       headless: 'new',
-      args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage'],
+      args: [
+        '--no-sandbox', 
+        '--disable-setuid-sandbox', 
+        '--disable-dev-shm-usage',
+        '--disable-gpu',
+        '--disable-software-rasterizer',
+        '--js-flags=--max-old-space-size=256'
+      ],
       ignoreHTTPSErrors: true,
     });
 

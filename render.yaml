@@ -42,7 +42,7 @@ services:
 
       # Keep low on free tier (512 MB RAM, ~200-300 MB per Chromium instance)
       - key: MAX_CONCURRENT_SCANS
-        value: "3"
+        value: "1"
 
       - key: PORT
         value: "8080"

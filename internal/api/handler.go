@@ -83,6 +83,7 @@ func (h *Handler) Scan(w http.ResponseWriter, r *http.Request) {
 	result, err := h.Scanner.Scan(ctx, req.URL, wcagLevel, req.Depth)
 	if err != nil {
 		h.Logger.Error("scan failed", zap.String("url", req.URL), zap.Error(err))
+		writeError(w, http.StatusInternalServerError, "scan failed", err.Error())
 		return
 	}
 	// Generate visual HTML report if requested
