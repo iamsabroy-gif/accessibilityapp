@@ -20,6 +20,7 @@ import (
 	"github.com/webaccessibility/server/internal/scanner"
 	"github.com/webaccessibility/server/internal/scoring"
 	"go.uber.org/zap"
+	"sync/atomic"
 )
 
 // Handler holds shared dependencies for all route handlers.
@@ -29,6 +30,7 @@ type Handler struct {
 	WCAGLevel   string
 	ScanTimeout time.Duration
 	Coverage    *coverage.Store
+	activeScans int32
 }
 
 // Health handles GET /api/v1/health
@@ -39,10 +41,11 @@ func (h *Handler) Health(w http.ResponseWriter, r *http.Request) {
 // Info handles GET /api/v1/
 func (h *Handler) Info(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"name":        "Web Accessibility API",
-		"version":     "1.0.0",
-		"description": "WCAG accessibility scanning API powered by axe-core",
-		"endpoints":   []string{"POST /api/v1/scan", "POST /api/v1/score", "GET  /api/v1/health", "GET  /api/v1/", "POST /api/v1/token", "POST /api/v1/secret", "GET  /api/v1/secret"},
+		"name":                 "Web Accessibility API",
+		"version":              "1.0.0",
+		"description":          "WCAG accessibility scanning API powered by axe-core",
+		"max_concurrent_scans": config.GetMaxConcurrentScans(),
+		"endpoints":            []string{"POST /api/v1/scan", "POST /api/v1/score", "GET  /api/v1/health", "GET  /api/v1/", "POST /api/v1/token", "POST /api/v1/secret", "GET  /api/v1/secret"},
 	})
 }
 
@@ -69,6 +72,13 @@ func (h *Handler) Scan(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), h.ScanTimeout)
 	defer cancel()
+
+	if err := h.acquireSlot(ctx); err != nil {
+		writeError(w, http.StatusTooManyRequests, "scan aborted or timed out while waiting for slot", err.Error())
+		return
+	}
+	defer h.releaseSlot()
+
 	h.Logger.Info("starting scan", zap.String("url", req.URL), zap.String("wcag", wcagLevel), zap.Int("depth", req.Depth))
 	result, err := h.Scanner.Scan(ctx, req.URL, wcagLevel, req.Depth)
 	if err != nil {
@@ -243,19 +253,67 @@ func (h *Handler) UploadCoverageReport(w http.ResponseWriter, r *http.Request) {
 
 // SetSecret handles POST /api/v1/secret to change the JWT secret at runtime.
 func (h *Handler) SetSecret(w http.ResponseWriter, r *http.Request) {
-	var payload struct {
+	var req struct {
 		Secret string `json:"secret"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body", err.Error())
 		return
 	}
-	if payload.Secret == "" {
+	if req.Secret == "" {
 		writeError(w, http.StatusBadRequest, "secret cannot be empty", "")
 		return
 	}
-	config.SetSecret(payload.Secret)
+	config.SetSecret(req.Secret)
+	h.Logger.Info("JWT secret updated via API")
 	writeJSON(w, http.StatusOK, map[string]string{"status": "secret updated"})
+}
+
+// GetSettings handles GET /api/v1/admin/settings
+func (h *Handler) GetSettings(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"max_concurrent_scans": config.GetMaxConcurrentScans(),
+	})
+}
+
+// UpdateSettings handles POST /api/v1/admin/settings
+func (h *Handler) UpdateSettings(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		MaxConcurrentScans int `json:"max_concurrent_scans"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body", err.Error())
+		return
+	}
+	if req.MaxConcurrentScans > 0 {
+		config.SetMaxConcurrentScans(req.MaxConcurrentScans)
+		h.Logger.Info("max_concurrent_scans updated via API", zap.Int("max_concurrent_scans", req.MaxConcurrentScans))
+	}
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"max_concurrent_scans": config.GetMaxConcurrentScans(),
+	})
+}
+
+func (h *Handler) acquireSlot(ctx context.Context) error {
+	for {
+		max := int32(config.GetMaxConcurrentScans())
+		current := atomic.LoadInt32(&h.activeScans)
+		if current < max {
+			if atomic.CompareAndSwapInt32(&h.activeScans, current, current+1) {
+				return nil
+			}
+			continue
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(100 * time.Millisecond):
+		}
+	}
+}
+
+func (h *Handler) releaseSlot() {
+	atomic.AddInt32(&h.activeScans, -1)
 }
 
 // GetSecret returns the active JWT secret (development only).

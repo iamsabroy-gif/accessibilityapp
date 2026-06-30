@@ -24,6 +24,8 @@ func NewRouter(h *Handler, logger *zap.Logger) *chi.Mux {
 		r.Get("/session", h.Session)                   // public: auto-issues JWT to any visitor
 		r.Post("/admin/verify", h.VerifyAdminPassword) // public: verifies admin password
 		r.Post("/admin/coverage", adminAuthMiddleware(h.UploadCoverageReport))
+		r.Get("/admin/settings", adminAuthMiddleware(h.GetSettings))
+		r.Post("/admin/settings", adminAuthMiddleware(h.UpdateSettings))
 		r.Get("/coverage", h.CoverageReport)
 		r.Post("/token", h.GenerateToken)                 // public
 		r.Post("/secret", jwtAuthMiddleware(h.SetSecret)) // protected: change secret

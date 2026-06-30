@@ -396,6 +396,16 @@
         <p class="field-hint">Serial scans links one at a time (low memory). Parallel scans all at once (faster, needs more RAM).</p>
       </div>
 
+      <div class="admin-toggle-section" style="margin-top: 1rem;">
+        <label for="admin-max-concurrent" class="form-label">Max Concurrent Scans</label>
+        <p class="field-hint">Limit backend concurrency (e.g. 1 for strict serial execution across all parallel requests).</p>
+        <div style="display: flex; gap: 8px;">
+          <input id="admin-max-concurrent" type="number" min="1" max="100" class="modal-input" style="width: 80px;" />
+          <button id="admin-save-concurrent" class="btn-secondary" type="button">Save</button>
+        </div>
+        <p id="admin-concurrent-status" class="upload-status" role="status" aria-live="polite"></p>
+      </div>
+
 
       <button id="admin-refresh-token" class="btn-secondary" type="button">Force Token Refresh</button>
 

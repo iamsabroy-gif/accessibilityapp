@@ -66,6 +66,25 @@ func GetAdminPassword() string {
     return global.AdminPassword
 }
 
+// GetMaxConcurrentScans returns the max concurrent scans allowed.
+func GetMaxConcurrentScans() int {
+    mu.RLock()
+    defer mu.RUnlock()
+    if global == nil {
+        return 5
+    }
+    return global.MaxConcurrentScans
+}
+
+// SetMaxConcurrentScans updates the max concurrent scans limit.
+func SetMaxConcurrentScans(n int) {
+    mu.Lock()
+    defer mu.Unlock()
+    if global != nil && n > 0 {
+        global.MaxConcurrentScans = n
+    }
+}
+
 // SetSecret updates the JWT secret at runtime.
 func SetSecret(newSecret string) {
     mu.Lock()

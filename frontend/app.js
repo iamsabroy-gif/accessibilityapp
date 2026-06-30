@@ -255,7 +255,7 @@ async function scanDiscoveredLinks(links, wcagLevel) {
         <div class="linked-page-info">
           <div class="linked-page-url" title="${escapeHTML(linkUrl)}">${escapeHTML(linkUrl)}</div>
           <div class="linked-page-meta">
-            <span class="linked-page-stat scanning">${mode === 'serial' ? 'Queued…' : 'Scanning…'}</span>
+            <span class="linked-page-stat scanning">Queued…</span>
           </div>
         </div>
       </div>`;
@@ -302,7 +302,31 @@ async function scanDiscoveredLinks(links, wcagLevel) {
   };
 
   if (mode === 'parallel') {
-    await Promise.allSettled(cardStates.map(e => scanOne(e)));
+    let maxConcurrent = 5;
+    try {
+      const infoRes = await fetch(`${apiBase()}/api/v1/`);
+      if (infoRes.ok) {
+        const info = await infoRes.json();
+        if (info.max_concurrent_scans) maxConcurrent = info.max_concurrent_scans;
+      }
+    } catch (e) {
+      console.warn('Failed to fetch max_concurrent_scans', e);
+    }
+
+    let i = 0;
+    const workers = Array(maxConcurrent).fill(0).map(async () => {
+      while (i < cardStates.length) {
+        if (controller.signal.aborted) {
+          const entry = cardStates[i++];
+          renderLinkedPageTimeout(entry.card, entry.url);
+          entry.done = true;
+          continue;
+        }
+        const entry = cardStates[i++];
+        await scanOne(entry);
+      }
+    });
+    await Promise.allSettled(workers);
   } else {
     for (const entry of cardStates) {
       if (controller.signal.aborted) {
@@ -1325,6 +1349,60 @@ async function uploadCoverageReport() {
   }
 }
 
+async function loadAdminSettings() {
+  const input = $('admin-max-concurrent');
+  if (!input) return;
+  try {
+    const res = await fetch(`${apiBase()}/api/v1/admin/settings`, {
+      headers: { 'Authorization': `Bearer ${state.adminToken || ''}` }
+    });
+    if (!res.ok) return;
+    const data = await res.json();
+    input.value = data.max_concurrent_scans || 5;
+  } catch (err) {
+    console.error('Failed to load settings', err);
+  }
+}
+
+async function saveMaxConcurrent() {
+  const input = $('admin-max-concurrent');
+  const status = $('admin-concurrent-status');
+  const btn = $('admin-save-concurrent');
+  if (!input || !status || !btn) return;
+
+  const val = parseInt(input.value, 10);
+  if (isNaN(val) || val < 1) {
+    status.textContent = 'Invalid value';
+    status.className = 'upload-status error';
+    return;
+  }
+
+  btn.disabled = true;
+  status.textContent = 'Saving...';
+  status.className = 'upload-status';
+
+  try {
+    const res = await fetch(`${apiBase()}/api/v1/admin/settings`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${state.adminToken || ''}`
+      },
+      body: JSON.stringify({ max_concurrent_scans: val })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Failed to save');
+    status.textContent = 'Saved!';
+    status.className = 'upload-status success';
+    setTimeout(() => { if (status.textContent === 'Saved!') status.textContent = ''; }, 3000);
+  } catch (err) {
+    status.textContent = err.message;
+    status.className = 'upload-status error';
+  } finally {
+    btn.disabled = false;
+  }
+}
+
 function updateScanModeToggle() {
   const mode = getScanMode();
   $('scan-mode-serial')?.classList.toggle('active', mode === 'serial');
@@ -1342,6 +1420,7 @@ function openAdminDrawer() {
 
   updateScanModeToggle();
   updateAdminTokenStatus();
+  loadAdminSettings();
 
   overlay.classList.add('open');
   overlay.setAttribute('aria-hidden', 'false');
@@ -1422,6 +1501,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
   $('scan-mode-serial')?.addEventListener('click', () => setScanMode('serial'));
   $('scan-mode-parallel')?.addEventListener('click', () => setScanMode('parallel'));
+  $('admin-save-concurrent')?.addEventListener('click', saveMaxConcurrent);
+
   $('coverage-upload-btn')?.addEventListener('click', uploadCoverageReport);
   $('admin-refresh-token')?.addEventListener('click', async () => {
     localStorage.removeItem(LS_KEY_TOKEN);
