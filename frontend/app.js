@@ -540,7 +540,7 @@ function renderResults(result) {
   const screenshotSrc     = result.screenshot || result.visual_report_screenshot;
   if (screenshotSection && screenshotImg && screenshotSrc) {
     renderIssuePreview(screenshotImg, violations);
-    screenshotImg.src = screenshotSrc.startsWith('data:') ? screenshotSrc : `data:image/png;base64,${screenshotSrc}`;
+    screenshotImg.src = screenshotSrc.startsWith('data:') ? screenshotSrc : `data:image/jpeg;base64,${screenshotSrc}`;
     screenshotSection.classList.remove('hidden');
   } else if (screenshotSection) {
     screenshotSection.classList.add('hidden');

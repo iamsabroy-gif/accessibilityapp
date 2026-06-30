@@ -1321,7 +1321,7 @@ const contentOnHoverCheck = await (async () => {
     try {
       // Scroll back to top before screenshot
       await page.evaluate(() => window.scrollTo(0, 0));
-      const screenshotBuf = await page.screenshot({ fullPage: true, type: 'png' });
+      const screenshotBuf = await page.screenshot({ fullPage: true, type: 'jpeg', quality: 70 });
       screenshotB64 = screenshotBuf.toString('base64');
     } catch (e) {
       console.error('screenshot failed:', e.message);
