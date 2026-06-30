@@ -279,13 +279,13 @@ async function scanDiscoveredLinks(links, wcagLevel) {
   });
   linkedSection.classList.remove('hidden');
 
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), TIMEOUT_MS);
-
   const scanOne = async (entry) => {
     // Update status to scanning (for serial mode where it was "Queued")
     const statusEl = entry.card.querySelector('.linked-page-stat');
     if (statusEl) statusEl.textContent = 'Scanning…';
+
+    const reqController = new AbortController();
+    const reqTimeout = setTimeout(() => reqController.abort(), TIMEOUT_MS);
 
     try {
       await ensureToken();
@@ -296,8 +296,10 @@ async function scanDiscoveredLinks(links, wcagLevel) {
           'Authorization': `Bearer ${state.token}`,
         },
         body: JSON.stringify({ url: entry.url, wcag_level: wcagLevel, depth: 0 }),
-        signal: controller.signal,
+        signal: reqController.signal,
       });
+
+      clearTimeout(reqTimeout);
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Scan failed');
       entry.done = true;
@@ -307,8 +309,9 @@ async function scanDiscoveredLinks(links, wcagLevel) {
         state.scanResult.embedded_results.push(data);
       }
     } catch (err) {
+      clearTimeout(reqTimeout);
       entry.done = true;
-      if (controller.signal.aborted) {
+      if (reqController.signal.aborted) {
         renderLinkedPageTimeout(entry.card, entry.url);
       } else {
         renderLinkedPageError(entry.card, entry.url, err.message);
@@ -331,12 +334,6 @@ async function scanDiscoveredLinks(links, wcagLevel) {
     let i = 0;
     const workers = Array(maxConcurrent).fill(0).map(async () => {
       while (i < cardStates.length) {
-        if (controller.signal.aborted) {
-          const entry = cardStates[i++];
-          renderLinkedPageTimeout(entry.card, entry.url);
-          entry.done = true;
-          continue;
-        }
         const entry = cardStates[i++];
         await scanOne(entry);
       }
@@ -344,16 +341,10 @@ async function scanDiscoveredLinks(links, wcagLevel) {
     await Promise.allSettled(workers);
   } else {
     for (const entry of cardStates) {
-      if (controller.signal.aborted) {
-        renderLinkedPageTimeout(entry.card, entry.url);
-        entry.done = true;
-        continue;
-      }
       await scanOne(entry);
     }
   }
 
-  clearTimeout(timeout);
   cardStates.filter(e => !e.done).forEach(e => renderLinkedPageTimeout(e.card, e.url));
 }
 
