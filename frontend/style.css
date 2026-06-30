@@ -308,16 +308,21 @@ body::before {
 
 /* ─── Error Banner ─────────────────────────────────────────── */
 #error-banner {
-  max-width: 700px;
-  margin: 16px auto 0;
-  background: rgba(244,63,94,0.12);
-  border: 1px solid rgba(244,63,94,0.3);
+  position: fixed;
+  top: 80px;
+  right: 24px;
+  z-index: 9999;
+  max-width: 400px;
+  background: rgba(244,63,94,0.95);
+  backdrop-filter: blur(8px);
+  border: 1px solid rgba(255,255,255,0.1);
+  box-shadow: 0 10px 25px -5px rgba(0,0,0,0.3);
   border-radius: var(--radius-md);
   padding: 14px 20px;
   display: flex;
   align-items: center;
   gap: 10px;
-  color: #fda4af;
+  color: #fff;
   font-size: 0.9rem;
   animation: fadeSlideDown 0.3s var(--ease-out);
   transition: background 0.2s, border-color 0.2s;
@@ -325,8 +330,8 @@ body::before {
 
 #error-banner[style*="cursor: pointer"]:hover,
 #error-banner[style*="cursor:pointer"]:hover {
-  background: rgba(244,63,94,0.18);
-  border-color: rgba(244,63,94,0.5);
+  background: rgba(225,29,72,0.95);
+  border-color: rgba(255,255,255,0.2);
 }
 
 /* ─── Loading State ────────────────────────────────────────── */
@@ -1072,13 +1077,14 @@ body::before {
   cursor: pointer;
   transition: background 0.2s, transform 0.15s var(--ease-spring);
 }
-.new-scan-btn:hover { background: rgba(99,102,241,0.1); transform: translateY(-1px); }
+.new-scan-btn:hover:not(.scanning-disabled) { background: rgba(99,102,241,0.1); transform: translateY(-1px); }
+.new-scan-btn.scanning-disabled { opacity: 0.5; cursor: not-allowed; }
 .download-report-btn { color:#93c5fd; border-color:rgba(59,130,246,.4); }
-.download-report-btn:hover { background:rgba(59,130,246,.1); }
+.download-report-btn:hover:not(.scanning-disabled) { background:rgba(59,130,246,.1); }
 .download-md-btn { color:#6ee7b7; border-color:rgba(16,185,129,.4); }
-.download-md-btn:hover { background:rgba(16,185,129,.1); }
+.download-md-btn:hover:not(.scanning-disabled) { background:rgba(16,185,129,.1); }
 .download-xlsx-btn { color:#a78bfa; border-color:rgba(139,92,246,.4); }
-.download-xlsx-btn:hover { background:rgba(139,92,246,.1); }
+.download-xlsx-btn:hover:not(.scanning-disabled) { background:rgba(139,92,246,.1); }
 
 /* ─── Animations ────────────────────────────────────────────── */
 @keyframes spin {
