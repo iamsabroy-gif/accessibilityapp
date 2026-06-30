@@ -237,9 +237,21 @@ async function runScan(url, wcagLevel, depth = 0) {
     const links = data.discovered_links || [];
     if (depth === 1 && links.length > 0) {
       setDownloadButtonsDisabled(true);
-      scanDiscoveredLinks(links, wcagLevel).finally(() => setDownloadButtonsDisabled(false));
+      scanDiscoveredLinks(links, wcagLevel).finally(() => {
+        setDownloadButtonsDisabled(false);
+        // Reveal Impacted Components only after all child scans have finished
+        const ss = $('screenshot-section');
+        if (ss && $('screenshot-img')?.src && $('screenshot-img').src !== window.location.href) {
+          ss.classList.remove('hidden');
+        }
+      });
     } else {
       setDownloadButtonsDisabled(false);
+      // No child scans — reveal immediately
+      const ss = $('screenshot-section');
+      if (ss && $('screenshot-img')?.src && $('screenshot-img').src !== window.location.href) {
+        ss.classList.remove('hidden');
+      }
     }
   } catch (err) {
     showError(`Scan error: ${err.message}`);
@@ -534,16 +546,15 @@ function renderResults(result) {
   const linkedSection = $('linked-pages-section');
   if (linkedSection) linkedSection.classList.add('hidden');
 
-  // ── Page Screenshot ───────────────────────────
+  // ── Page Screenshot ── (hidden until all child scans complete) ───
   const screenshotSection = $('screenshot-section');
   const screenshotImg     = $('screenshot-img');
   const screenshotSrc     = result.screenshot || result.visual_report_screenshot;
+  if (screenshotSection) screenshotSection.classList.add('hidden');
   if (screenshotSection && screenshotImg && screenshotSrc) {
     renderIssuePreview(screenshotImg, violations);
     screenshotImg.src = screenshotSrc.startsWith('data:') ? screenshotSrc : `data:image/jpeg;base64,${screenshotSrc}`;
-    screenshotSection.classList.remove('hidden');
-  } else if (screenshotSection) {
-    screenshotSection.classList.add('hidden');
+    // Section is revealed via revealScreenshot() once all child scans are done
   }
 }
 
