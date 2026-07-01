@@ -240,18 +240,12 @@ async function runScan(url, wcagLevel, depth = 0) {
       scanDiscoveredLinks(links, wcagLevel).finally(() => {
         setDownloadButtonsDisabled(false);
         // Reveal Impacted Components only after all child scans have finished
-        const ss = $('screenshot-section');
-        if (ss && $('screenshot-img')?.src && $('screenshot-img').src !== window.location.href) {
-          ss.classList.remove('hidden');
-        }
+        revealScreenshotSection(data);
       });
     } else {
       setDownloadButtonsDisabled(false);
       // No child scans — reveal immediately
-      const ss = $('screenshot-section');
-      if (ss && $('screenshot-img')?.src && $('screenshot-img').src !== window.location.href) {
-        ss.classList.remove('hidden');
-      }
+      revealScreenshotSection(data);
     }
   } catch (err) {
     showError(`Scan error: ${err.message}`);
@@ -400,6 +394,130 @@ function renderLinkedPageCard(card, sub) {
   body.className = 'linked-page-body';
   body.style.display = 'none';
 
+  // ── Inline screenshot panel for this linked page ──
+  const screenshotSrc = sub.screenshot || sub.visual_report_screenshot;
+  if (screenshotSrc) {
+    const cardId = `linked-preview-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+
+    const previewSection = document.createElement('div');
+    previewSection.className = 'linked-page-preview-section';
+
+    // Toolbar: summary text + severity filters
+    const toolbar = document.createElement('div');
+    toolbar.className = 'preview-toolbar';
+
+    const summaryEl = document.createElement('p');
+    summaryEl.className = 'preview-summary';
+    toolbar.appendChild(summaryEl);
+
+    const filtersEl = document.createElement('div');
+    filtersEl.className = 'preview-filters';
+    filtersEl.setAttribute('aria-label', 'Filter issue indicators by severity');
+    toolbar.appendChild(filtersEl);
+    previewSection.appendChild(toolbar);
+
+    // Image + overlay wrapper
+    const wrap = document.createElement('div');
+    wrap.className = 'screenshot-wrap';
+
+    const img = document.createElement('img');
+    img.className = 'screenshot-img';
+    img.alt = `Screenshot of ${escapeHTML(sub.url || 'scanned page')}`;
+
+    const overlayEl = document.createElement('div');
+    overlayEl.className = 'issue-overlay';
+    overlayEl.setAttribute('aria-label', 'Accessibility issue indicators');
+
+    wrap.appendChild(img);
+    wrap.appendChild(overlayEl);
+    previewSection.appendChild(wrap);
+
+    const helpEl = document.createElement('p');
+    helpEl.className = 'preview-help';
+    helpEl.textContent = 'Select an indicator to jump to its issue details.';
+    previewSection.appendChild(helpEl);
+
+    body.appendChild(previewSection);
+
+    // Wire up renderIssuePreview logic inline (scoped to this card's elements)
+    const buildInlinePreview = () => {
+      const impacted = subViols.flatMap((violation, vIdx) =>
+        (violation.nodes || [])
+          .filter(n => n.bbox && n.bbox.width > 0 && n.bbox.height > 0)
+          .map((n, nIdx) => ({ violation, violationIndex: vIdx, nodeIndex: nIdx, bbox: n.bbox }))
+      );
+
+      summaryEl.textContent = impacted.length
+        ? `${impacted.length} impacted component${impacted.length === 1 ? '' : 's'} highlighted.`
+        : 'No component positions available for this page.';
+
+      const severities = ['critical', 'serious', 'moderate', 'minor']
+        .filter(sev => impacted.some(it => (it.violation.impact || 'minor') === sev));
+      let activeSeverity = 'all';
+
+      const applyFilter = sev => {
+        activeSeverity = sev;
+        overlayEl.querySelectorAll('.issue-indicator').forEach(ind => {
+          ind.hidden = sev !== 'all' && ind.dataset.impact !== sev;
+        });
+        filtersEl.querySelectorAll('button').forEach(btn => {
+          const sel = btn.dataset.impact === activeSeverity;
+          btn.classList.toggle('active', sel);
+          btn.setAttribute('aria-pressed', String(sel));
+        });
+      };
+
+      filtersEl.replaceChildren();
+      ['all', ...severities].forEach(impact => {
+        const count = impact === 'all' ? impacted.length : impacted.filter(it => it.violation.impact === impact).length;
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = `preview-filter ${impact}`;
+        btn.dataset.impact = impact;
+        btn.textContent = `${impact === 'all' ? 'All' : impact[0].toUpperCase() + impact.slice(1)} (${count})`;
+        btn.addEventListener('click', () => applyFilter(impact));
+        filtersEl.appendChild(btn);
+      });
+
+      const positionIndicators = () => {
+        if (!img.naturalWidth || !img.naturalHeight) return;
+        overlayEl.replaceChildren();
+        impacted.forEach(({ violation, violationIndex, bbox }) => {
+          const impact = violation.impact || 'minor';
+          const indicator = document.createElement('button');
+          indicator.type = 'button';
+          indicator.className = `issue-indicator ${impact}`;
+          indicator.dataset.impact = impact;
+          indicator.hidden = activeSeverity !== 'all' && activeSeverity !== impact;
+          indicator.style.left   = `${Math.max(0, bbox.x) / img.naturalWidth  * 100}%`;
+          indicator.style.top    = `${Math.max(0, bbox.y) / img.naturalHeight * 100}%`;
+          indicator.style.width  = `${Math.min(bbox.width,  img.naturalWidth)  / img.naturalWidth  * 100}%`;
+          indicator.style.height = `${Math.min(bbox.height, img.naturalHeight) / img.naturalHeight * 100}%`;
+          indicator.setAttribute('aria-label', `${impact} issue: ${violation.help || violation.description || violation.id}`);
+          indicator.title = `${violation.id}: ${violation.help || ''}`.trim();
+
+          const badge = document.createElement('span');
+          badge.className = 'issue-indicator-badge';
+          badge.textContent = String(violationIndex + 1);
+          indicator.appendChild(badge);
+          overlayEl.appendChild(indicator);
+        });
+      };
+
+      img.addEventListener('load', positionIndicators, { once: true });
+      img.src = screenshotSrc.startsWith('data:') ? screenshotSrc : `data:image/jpeg;base64,${screenshotSrc}`;
+      applyFilter('all');
+    };
+
+    // Build preview lazily on first open to avoid loading all images upfront
+    let previewBuilt = false;
+    const origToggle = () => {
+      if (!previewBuilt) { buildInlinePreview(); previewBuilt = true; }
+    };
+    // store for the toggle handler below
+    card._buildPreview = origToggle;
+  }
+
   if (subViols.length > 0) {
     const violTitle = document.createElement('div');
     violTitle.className = 'linked-page-body-title';
@@ -419,6 +537,7 @@ function renderLinkedPageCard(card, sub) {
     const isOpen = card.classList.toggle('open');
     body.style.display = isOpen ? 'block' : 'none';
     header.setAttribute('aria-expanded', String(isOpen));
+    if (isOpen && card._buildPreview) card._buildPreview();
   };
   header.addEventListener('click', toggle);
   header.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(); } });
@@ -554,7 +673,18 @@ function renderResults(result) {
   if (screenshotSection && screenshotImg && screenshotSrc) {
     renderIssuePreview(screenshotImg, violations);
     screenshotImg.src = screenshotSrc.startsWith('data:') ? screenshotSrc : `data:image/jpeg;base64,${screenshotSrc}`;
-    // Section is revealed via revealScreenshot() once all child scans are done
+  } else if (screenshotImg) {
+    screenshotImg.removeAttribute('src');
+  }
+  // Section is revealed by revealScreenshotSection() after all child scans finish.
+}
+
+// Reveal the Impacted Components / screenshot section only when a screenshot exists.
+function revealScreenshotSection(result) {
+  const src = result && (result.screenshot || result.visual_report_screenshot);
+  const ss  = $('screenshot-section');
+  if (ss && src) {
+    ss.classList.remove('hidden');
   }
 }
 

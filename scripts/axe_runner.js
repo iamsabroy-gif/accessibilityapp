@@ -1316,13 +1316,14 @@ const contentOnHoverCheck = await (async () => {
       return { ...v, violationIndex: violIdx + 1, nodes: nodesWithBBox };
     }));
 
-    // ---------- Full-page screenshot (base64 PNG) ----------
+    // ---------- Full-page screenshot (base64 JPEG) ----------
     let screenshotB64 = null;
     try {
       // Scroll back to top before screenshot
       await page.evaluate(() => window.scrollTo(0, 0));
       const screenshotBuf = await page.screenshot({ fullPage: true, type: 'jpeg', quality: 70 });
-      screenshotB64 = screenshotBuf.toString('base64');
+      // Newer Puppeteer returns Uint8Array; Buffer.from() ensures .toString('base64') works correctly
+      screenshotB64 = Buffer.from(screenshotBuf).toString('base64');
     } catch (e) {
       console.error('screenshot failed:', e.message);
     }
