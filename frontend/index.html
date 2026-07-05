@@ -6,7 +6,7 @@
   <title>AccessScan — WCAG Accessibility Scanner</title>
   <meta name="description" content="Scan any website for WCAG 2.1 accessibility compliance. Get detailed violation reports, impact breakdowns, and an accessibility score powered by axe-core." />
   <meta name="theme-color" content="#070b18" />
-  <link rel="stylesheet" href="style.css?v=20260702a" />
+  <link rel="stylesheet" href="style.css?v=20260705c" />
   <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
 </head>
 <body>
@@ -239,11 +239,23 @@
           <div class="stat-value" id="stat-minor">0</div>
           <div class="stat-name">Minor</div>
         </div>
-        <div class="stat-card passes" role="group" aria-label="Passing rules">
+        <div class="stat-card passes" role="group" aria-label="Passing rules count">
           <div class="stat-value" id="stat-passes">0</div>
-          <div class="stat-name">Passed</div>
+          <div class="stat-name">Rules Passed</div>
         </div>
       </div>
+
+      <!-- ── Score Explanation Panel ──────────────── -->
+      <details id="score-explain-panel" class="score-explain-panel">
+        <summary class="score-explain-summary" aria-label="How is this score calculated?">
+          <span class="score-explain-icon" aria-hidden="true">📊</span>
+          <span>How is this score calculated?</span>
+          <span class="score-explain-chevron" aria-hidden="true">›</span>
+        </summary>
+        <div class="score-explain-body" id="score-explain-body">
+          <!-- populated by app.js after each scan -->
+        </div>
+      </details>
 
       <!-- ── Recommendation Banner ─────────────── -->
       <aside class="recommendation-banner" aria-label="Accessibility recommendation">
@@ -260,6 +272,7 @@
         <div class="passes-info">
           <div class="passes-count" id="passes-count" aria-live="polite">0</div>
           <div class="passes-label">accessibility rules passed</div>
+          <div class="passes-total" id="passes-total" style="font-size:0.78rem;color:var(--text-muted);margin-top:2px;"></div>
         </div>
       </div>
 
@@ -397,6 +410,19 @@
       </div>
 
       <div class="admin-toggle-section" style="margin-top: 1rem;">
+        <label class="form-label">Scoring Formula</label>
+        <div class="toggle-row">
+          <button id="score-formula-compliance" class="toggle-btn active" type="button" data-formula="compliance">Compliance-Aligned</button>
+          <button id="score-formula-penalty" class="toggle-btn" type="button" data-formula="penalty">Penalty-Based</button>
+        </div>
+        <p class="field-hint" id="score-formula-hint">
+          <strong>Compliance-Aligned:</strong> score = pass-rules ÷ total-rules × 100. Score tracks the compliance % on screen.<br>
+          <strong>Penalty-Based:</strong> score = 100 − Σ penalties (critical −20, serious −10, moderate −5, minor −2). Drops quickly for severe violations.
+        </p>
+        <p id="score-formula-status" class="upload-status" role="status" aria-live="polite"></p>
+      </div>
+
+      <div class="admin-toggle-section" style="margin-top: 1rem;">
         <label for="admin-max-concurrent" class="form-label">Max Concurrent Scans</label>
         <p class="field-hint">Limit backend concurrency (e.g. 1 for strict serial execution across all parallel requests).</p>
         <div style="display: flex; gap: 8px;">
@@ -432,6 +458,6 @@
 
 </div><!-- #app -->
 
-<script src="app.js?v=20260702a"></script>
+<script src="app.js?v=20260705e"></script>
 </body>
 </html>

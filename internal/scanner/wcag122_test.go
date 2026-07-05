@@ -245,7 +245,7 @@ func TestScoring_122_CriticalPenalty(t *testing.T) {
 	violations := []models.Violation{
 		{ID: "video-captions-present", Impact: "critical"},
 	}
-	score, _, _ := scoring.Calculate(violations, 0)
+	score, _, _ := scoring.Calculate(violations, 0, scoring.FormulaPenalty)
 	const want = 80
 	if score != want {
 		t.Errorf("score = %d; want %d (100 - 20 critical penalty)", score, want)
@@ -258,7 +258,7 @@ func TestScoring_122_SeriousPenalty(t *testing.T) {
 	violations := []models.Violation{
 		{ID: "video-captions-track-src", Impact: "serious"},
 	}
-	score, _, _ := scoring.Calculate(violations, 0)
+	score, _, _ := scoring.Calculate(violations, 0, scoring.FormulaPenalty)
 	const want = 90
 	if score != want {
 		t.Errorf("score = %d; want %d (100 - 10 serious penalty)", score, want)
@@ -272,7 +272,7 @@ func TestScoring_122_CriticalGrade(t *testing.T) {
 	violations := []models.Violation{
 		{ID: "video-captions-present", Impact: "critical"},
 	}
-	_, grade, _ := scoring.Calculate(violations, 5)
+	_, grade, _ := scoring.Calculate(violations, 5, scoring.FormulaPenalty)
 	if grade != "B" {
 		t.Errorf("grade = %q; want 'B' for score 80", grade)
 	}
@@ -287,7 +287,7 @@ func TestScoring_122_MultipleVideosMissingCaptions(t *testing.T) {
 		{ID: "video-captions-present", Impact: "critical"},
 		{ID: "video-captions-present", Impact: "critical"},
 	}
-	score, grade, _ := scoring.Calculate(violations, 0)
+	score, grade, _ := scoring.Calculate(violations, 0, scoring.FormulaPenalty)
 	const wantScore = 40
 	if score != wantScore {
 		t.Errorf("score = %d; want %d", score, wantScore)
@@ -305,7 +305,7 @@ func TestScoring_122_CompliancePct(t *testing.T) {
 	violations := []models.Violation{
 		{ID: "video-captions-present", Impact: "critical"},
 	}
-	_, _, pct := scoring.Calculate(violations, 3)
+	_, _, pct := scoring.Calculate(violations, 3, scoring.FormulaCompliance)
 	const want = 75.0
 	if pct != want {
 		t.Errorf("compliance pct = %.1f; want %.1f", pct, want)
@@ -320,7 +320,7 @@ func TestScoring_122_ScoreFloorIsZero(t *testing.T) {
 	for i := range violations {
 		violations[i] = models.Violation{ID: "video-captions-present", Impact: "critical"}
 	}
-	score, _, _ := scoring.Calculate(violations, 0)
+	score, _, _ := scoring.Calculate(violations, 0, scoring.FormulaPenalty)
 	if score < 0 {
 		t.Errorf("score = %d; score must not be negative", score)
 	}
@@ -333,7 +333,7 @@ func TestScoring_122_ScoreFloorIsZero(t *testing.T) {
 // all video-captions checks pass.
 func TestScoring_122_PerfectScoreWhenAllPass(t *testing.T) {
 	t.Parallel()
-	score, grade, pct := scoring.Calculate(nil, 5)
+	score, grade, pct := scoring.Calculate(nil, 5, scoring.FormulaCompliance)
 	if score != 100 {
 		t.Errorf("score = %d; want 100 with zero violations", score)
 	}

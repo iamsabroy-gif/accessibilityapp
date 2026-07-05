@@ -274,13 +274,15 @@ func (h *Handler) SetSecret(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) GetSettings(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"max_concurrent_scans": config.GetMaxConcurrentScans(),
+		"scoring_formula":      config.GetScoringFormula(),
 	})
 }
 
 // UpdateSettings handles POST /api/v1/admin/settings
 func (h *Handler) UpdateSettings(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		MaxConcurrentScans int `json:"max_concurrent_scans"`
+		MaxConcurrentScans int    `json:"max_concurrent_scans"`
+		ScoringFormula     string `json:"scoring_formula"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body", err.Error())
@@ -290,8 +292,13 @@ func (h *Handler) UpdateSettings(w http.ResponseWriter, r *http.Request) {
 		config.SetMaxConcurrentScans(req.MaxConcurrentScans)
 		h.Logger.Info("max_concurrent_scans updated via API", zap.Int("max_concurrent_scans", req.MaxConcurrentScans))
 	}
+	if req.ScoringFormula != "" {
+		config.SetScoringFormula(req.ScoringFormula)
+		h.Logger.Info("scoring_formula updated via API", zap.String("scoring_formula", req.ScoringFormula))
+	}
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"max_concurrent_scans": config.GetMaxConcurrentScans(),
+		"scoring_formula":      config.GetScoringFormula(),
 	})
 }
 

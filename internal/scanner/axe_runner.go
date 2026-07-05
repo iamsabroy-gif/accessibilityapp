@@ -201,7 +201,7 @@ func mapToScanResult(raw axeRawResult, url, wcagLevel string, durationMs int64) 
 		incompleteIDs = append(incompleteIDs, i.ID)
 	}
 
-	score, grade, compliancePct := scoring.Calculate(violations, len(passIDs))
+	score, grade, compliancePct := scoring.Calculate(violations, len(passIDs), config.GetScoringFormula())
 
 	// Build guideline slices
 	passGuidelines := mapGuidelines(passIDs)

@@ -885,6 +885,135 @@ body::before {
   color: var(--text-secondary);
 }
 
+/* ─── Score Explanation Panel ──────────────────────────────── */
+.score-explain-panel {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  margin-bottom: 16px;
+  overflow: hidden;
+  animation: fadeSlideUp 0.4s var(--ease-out) 0.2s both;
+}
+
+.score-explain-summary {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 20px;
+  cursor: pointer;
+  user-select: none;
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  list-style: none;
+  transition: background 0.2s, color 0.2s;
+}
+.score-explain-summary::-webkit-details-marker { display: none; }
+.score-explain-summary:hover {
+  background: rgba(99,102,241,0.06);
+  color: var(--text-accent);
+}
+
+.score-explain-icon { font-size: 1rem; }
+
+.score-explain-chevron {
+  margin-left: auto;
+  font-size: 1.1rem;
+  color: var(--text-muted);
+  transition: transform 0.25s var(--ease-out);
+  display: inline-block;
+}
+details[open] .score-explain-chevron { transform: rotate(90deg); }
+
+.score-explain-body {
+  padding: 0 20px 20px;
+  border-top: 1px solid var(--border);
+}
+
+/* Formula steps grid */
+.score-explain-steps {
+  display: grid;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.score-explain-step {
+  display: grid;
+  grid-template-columns: 28px 1fr auto;
+  align-items: start;
+  gap: 12px;
+  padding: 12px 14px;
+  border-radius: var(--radius-md);
+  background: rgba(255,255,255,0.03);
+  border: 1px solid rgba(255,255,255,0.06);
+}
+
+.step-num {
+  width: 28px; height: 28px;
+  border-radius: 50%;
+  background: rgba(99,102,241,0.15);
+  color: var(--text-accent);
+  font-size: 0.75rem;
+  font-weight: 700;
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
+}
+
+.step-label {
+  font-size: 0.82rem;
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+.step-label strong { color: var(--text-primary); }
+.step-label code {
+  font-family: 'Fira Code', 'Cascadia Code', monospace;
+  font-size: 0.78rem;
+  background: rgba(99,102,241,0.12);
+  color: var(--text-accent);
+  padding: 1px 5px;
+  border-radius: 4px;
+}
+
+.step-value {
+  font-size: 1rem;
+  font-weight: 800;
+  white-space: nowrap;
+  align-self: center;
+}
+
+/* Result row at bottom of explanation */
+.score-explain-result {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 14px;
+  padding: 12px 14px;
+  border-radius: var(--radius-md);
+  background: rgba(99,102,241,0.08);
+  border: 1px solid rgba(99,102,241,0.2);
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+}
+.score-explain-result .result-score {
+  font-size: 1.6rem;
+  font-weight: 900;
+  color: var(--text-accent);
+}
+
+.score-explain-formula-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 0.7rem;
+  padding: 3px 8px;
+  border-radius: 99px;
+  background: rgba(99,102,241,0.15);
+  color: var(--text-accent);
+  font-weight: 600;
+  margin-top: 14px;
+  margin-bottom: 4px;
+}
+
 /* ─── Admin Drawer ─────────────────────────────────────────── */
 #admin-overlay {
   position: fixed;

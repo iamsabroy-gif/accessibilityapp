@@ -641,6 +641,18 @@ function renderResults(result) {
   const passesCountEl = $('passes-count');
   if (passesCountEl) passesCountEl.textContent = passCount;
 
+  // Show "out of N rules checked" to prevent the raw count being mistaken for a %
+  const passesTotalEl = $('passes-total');
+  if (passesTotalEl) {
+    const totalRules = passCount + violCount;
+    passesTotalEl.textContent = totalRules > 0
+      ? `out of ${totalRules} rules checked`
+      : '';
+  }
+
+  // ── Score Explanation Panel ──────────────────────
+  buildScoreExplanation({ score, compliancePct, passCount, violCount, violations, summary });
+
   // ── Violations list ─────────────────────────────
   const titleEl   = $('violations-section-title');
   const violList  = $('violations-list');
@@ -784,8 +796,8 @@ function buildViolationCard(v) {
 
   const nodes    = v.nodes || [];
   const wcagRefs = (v.tags || [])
-    .filter(t => t.startsWith('wcag') && t.length <= 8)
-    .map(t => t.replace('wcag', 'WCAG '))
+    .filter(t => /^wcag/i.test(t) && t.length <= 9)
+    .map(formatWcagTag)
     .join(', ');
 
   // ── Affected element nodes ───────────────────────
@@ -891,6 +903,186 @@ function buildViolationCard(v) {
   return card;
 }
 
+/**
+ * Builds the content of the "How is this score calculated?" collapsible panel.
+ * Uses fully inline styles so it renders correctly regardless of CSS caching.
+ */
+function buildScoreExplanation({ score, compliancePct, passCount, violCount, violations, summary }) {
+  const el = $('score-explain-body');
+  if (!el) return;
+
+  const total        = passCount + violCount;
+
+  // Auto-detect formula: if score matches round(compliancePct) it's compliance-aligned,
+  // otherwise it's penalty-based (summary.scoring_formula is not included in the API response).
+  const expectedCompliance = Math.round(compliancePct);
+  const isCompliance = Math.abs(score - expectedCompliance) <= 1;
+
+  // Impact counts
+  const counts = { critical: 0, serious: 0, moderate: 0, minor: 0 };
+  (violations || []).forEach(v => { if (counts[v.impact] !== undefined) counts[v.impact]++; });
+  const totalPenalty = counts.critical * 20 + counts.serious * 10 + counts.moderate * 5 + counts.minor * 2;
+
+  // Grade → color
+  const gradeColors = { A: '#10b981', B: '#06b6d4', C: '#f59e0b', D: '#f97316', F: '#f43f5e' };
+  const grade      = summary?.grade || 'F';
+  const scoreColor = gradeColors[grade] || '#6366f1';
+
+  // ── shared inline style helpers ──────────────────
+  const S = {
+    wrap:     'padding:18px 0 4px;font-family:inherit;',
+    badge:    'display:inline-flex;align-items:center;gap:6px;font-size:0.72rem;font-weight:700;' +
+              'letter-spacing:0.05em;text-transform:uppercase;padding:4px 10px;border-radius:99px;' +
+              'background:rgba(99,102,241,0.15);color:#818cf8;margin-bottom:16px;',
+    row:      'display:grid;grid-template-columns:36px 1fr auto;align-items:start;gap:14px;' +
+              'padding:14px 16px;border-radius:10px;background:rgba(255,255,255,0.04);' +
+              'border:1px solid rgba(255,255,255,0.07);margin-bottom:10px;',
+    num:      'width:28px;height:28px;border-radius:50%;background:rgba(99,102,241,0.2);' +
+              'color:#818cf8;font-size:0.75rem;font-weight:800;display:flex;' +
+              'align-items:center;justify-content:center;flex-shrink:0;margin-top:2px;',
+    label:    'font-size:0.84rem;line-height:1.6;color:#94a3b8;',
+    strong:   'color:#e2e8f0;font-weight:700;',
+    mono:     'font-family:monospace;font-size:0.82rem;background:rgba(99,102,241,0.13);' +
+              'color:#818cf8;padding:2px 7px;border-radius:5px;',
+    val:      'font-size:1.15rem;font-weight:800;white-space:nowrap;align-self:center;padding-top:2px;',
+    divider:  'border:none;border-top:1px solid rgba(255,255,255,0.07);margin:16px 0;',
+    result:   'display:flex;align-items:center;justify-content:space-between;' +
+              'padding:16px 18px;border-radius:12px;background:rgba(99,102,241,0.08);' +
+              'border:1px solid rgba(99,102,241,0.22);margin-top:14px;',
+    scoreNum: `font-size:2rem;font-weight:900;line-height:1;color:${scoreColor};`,
+    scoreSub: 'font-size:0.78rem;color:#64748b;margin-top:3px;',
+    penTbl:   'width:100%;border-collapse:collapse;font-size:0.82rem;margin-top:10px;',
+    penTh:    'text-align:left;padding:5px 8px;color:#64748b;font-weight:600;font-size:0.72rem;' +
+              'text-transform:uppercase;letter-spacing:0.05em;border-bottom:1px solid rgba(255,255,255,0.07);',
+    penTd:    'padding:7px 8px;color:#94a3b8;border-bottom:1px solid rgba(255,255,255,0.04);',
+  };
+
+  const h = (style, tag, content) => `<${tag} style="${style}">${content}</${tag}>`;
+
+  let stepsHTML = '';
+
+  if (isCompliance) {
+    // ── Compliance-aligned ───────────────────────────
+    stepsHTML = `
+      <div style="${S.row}">
+        <div style="${S.num}">1</div>
+        <div style="${S.label}">
+          <span style="${S.strong}">Rules checked</span><br>
+          axe-core tested <span style="${S.strong}">${total} accessibility rules</span> on this page.
+          <span style="color:#10b981;font-weight:700">${passCount} passed</span> —
+          <span style="color:#f43f5e;font-weight:700">${violCount} failed</span>.
+        </div>
+        <div style="${S.val};color:#10b981">${passCount}<span style="font-size:0.75rem;font-weight:500;color:#64748b"> / ${total}</span></div>
+      </div>
+
+      <div style="${S.row}">
+        <div style="${S.num}">2</div>
+        <div style="${S.label}">
+          <span style="${S.strong}">Compliance rate</span><br>
+          <span style="${S.mono}">${passCount} ÷ ${total} × 100 = ${compliancePct.toFixed(1)}%</span><br>
+          This is the same number shown on the <em>Compliance</em> progress bar above.
+        </div>
+        <div style="${S.val};color:#818cf8">${compliancePct.toFixed(1)}%</div>
+      </div>
+
+      <div style="${S.row}">
+        <div style="${S.num}">3</div>
+        <div style="${S.label}">
+          <span style="${S.strong}">Score = rounded compliance %</span><br>
+          <span style="${S.mono}">round(${compliancePct.toFixed(1)}%) → ${score}</span><br>
+          The score is the compliance % rounded to the nearest whole number.
+          Since <strong>${passCount}</strong> of <strong>${total}</strong> rules passed
+          (${compliancePct.toFixed(1)}%), the score is <strong>${score}</strong>.
+        </div>
+        <div style="${S.val};color:${scoreColor}">${score}</div>
+      </div>`;
+
+  } else {
+    // ── Penalty-based ────────────────────────────────
+    const penRows = [
+      { sev: 'Critical', count: counts.critical, pts: 20, color: '#f43f5e' },
+      { sev: 'Serious',  count: counts.serious,  pts: 10, color: '#f97316' },
+      { sev: 'Moderate', count: counts.moderate, pts:  5, color: '#f59e0b' },
+      { sev: 'Minor',    count: counts.minor,    pts:  2, color: '#a3e635' },
+    ];
+
+    const penTableRows = penRows.map(r => `
+      <tr>
+        <td style="${S.penTd};color:${r.color};font-weight:700">${r.sev}</td>
+        <td style="${S.penTd}">${r.count} violation${r.count !== 1 ? 's' : ''}</td>
+        <td style="${S.penTd};color:#64748b">× ${r.pts} pts each</td>
+        <td style="${S.penTd};font-weight:700;color:${r.count > 0 ? '#f43f5e' : '#64748b'}">
+          ${r.count > 0 ? `−${r.count * r.pts} pts` : '—'}
+        </td>
+      </tr>`).join('');
+
+    stepsHTML = `
+      <div style="${S.row}">
+        <div style="${S.num}">1</div>
+        <div style="${S.label}">
+          <span style="${S.strong}">Start at 100</span><br>
+          Every page begins with a perfect score of <span style="color:#818cf8;font-weight:700">100</span>.
+          Points are deducted for each accessibility violation found.
+        </div>
+        <div style="${S.val};color:#818cf8">100</div>
+      </div>
+
+      <div style="${S.row}">
+        <div style="${S.num}">2</div>
+        <div style="${S.label}">
+          <span style="${S.strong}">Deduct points per violation severity</span><br>
+          <table style="${S.penTbl}">
+            <thead>
+              <tr>
+                <th style="${S.penTh}">Severity</th>
+                <th style="${S.penTh}">Found</th>
+                <th style="${S.penTh}">Rate</th>
+                <th style="${S.penTh}">Deducted</th>
+              </tr>
+            </thead>
+            <tbody>${penTableRows}</tbody>
+            <tfoot>
+              <tr>
+                <td colspan="3" style="${S.penTd};font-weight:700;color:#e2e8f0;border-top:1px solid rgba(255,255,255,0.1)">Total deduction</td>
+                <td style="${S.penTd};font-weight:900;color:#f43f5e;border-top:1px solid rgba(255,255,255,0.1)">−${totalPenalty} pts</td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+        <div style="${S.val};color:#f43f5e">−${totalPenalty}</div>
+      </div>
+
+      <div style="${S.row}">
+        <div style="${S.num}">3</div>
+        <div style="${S.label}">
+          <span style="${S.strong}">Final score</span><br>
+          <span style="${S.mono}">max(0,  100 − ${totalPenalty})  =  ${score}</span><br>
+          Score is floored at 0 — it can never go below zero regardless of violations.
+        </div>
+        <div style="${S.val};color:${scoreColor}">${score}</div>
+      </div>`;
+  }
+
+  el.innerHTML = `
+    <div style="${S.wrap}">
+      <div style="${S.badge}">${isCompliance ? '📐' : '⚖️'} &nbsp;${isCompliance ? 'Compliance-Aligned' : 'Penalty-Based'} formula</div>
+      ${stepsHTML}
+      <div style="${S.result}">
+        <div>
+          <div style="font-size:0.82rem;font-weight:700;color:#94a3b8;margin-bottom:3px;">Score breakdown</div>
+          <div style="font-size:0.75rem;color:#475569;">
+            ${passCount} passed &nbsp;·&nbsp; ${violCount} failed &nbsp;·&nbsp; ${total} rules total &nbsp;·&nbsp; ${compliancePct.toFixed(1)}% compliance
+          </div>
+        </div>
+        <div style="text-align:right">
+          <div style="${S.scoreNum}">${score}<span style="font-size:1rem;font-weight:400;color:#475569">/100</span></div>
+          <div style="${S.scoreSub}">Grade ${grade}</div>
+        </div>
+      </div>
+    </div>`;
+}
+
+
 function buildRecommendation(score, violations) {
   if (!violations.length) return 'Excellent! No violations detected. Keep up the great accessibility practices.';
   const counts = violations.reduce((acc, v) => { acc[v.impact] = (acc[v.impact] || 0) + 1; return acc; }, {});
@@ -918,6 +1110,47 @@ function escapeHTML(str) {
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;');
+}
+
+/**
+ * Converts a raw axe-core WCAG tag into a human-readable label.
+ *
+ * Two formats exist in axe-core tags:
+ *   1. Conformance-level tags  – wcag2a / wcag2aa / wcag2aaa / wcag21aa / wcag22aa
+ *   2. Success-criterion tags  – wcag111 / wcag122 / wcag146 / wcag244 …
+ *
+ * Examples:
+ *   wcag2aaa  → "WCAG 2 AAA"
+ *   wcag21aa  → "WCAG 2.1 AA"
+ *   wcag22aa  → "WCAG 2.2 AA"
+ *   wcag2a    → "WCAG 2 A"
+ *   wcag146   → "WCAG 1.4.6"
+ *   wcag244   → "WCAG 2.4.4"
+ */
+function formatWcagTag(raw) {
+  const s = raw.replace(/^wcag/i, '');
+
+  // Conformance-level pattern: optional version digits, then 'a'/'aa'/'aaa'
+  // e.g.  2a | 2aa | 2aaa | 21aa | 22aa
+  const levelMatch = s.match(/^(2(?:\.?[12])?)(a{1,3})$/i);
+  if (levelMatch) {
+    const ver   = levelMatch[1].replace('.', '');         // "21" → "21"
+    const level = levelMatch[2].toUpperCase();            // "aaa" → "AAA"
+    // Insert a dot for sub-versions: 21 → 2.1, 22 → 2.2
+    const vDisplay = ver.length === 2 ? `${ver[0]}.${ver[1]}` : ver;
+    return `WCAG ${vDisplay} ${level}`;
+  }
+
+  // Success-criterion pattern: 3 or 4 digits → X.Y.Z or X.Y.ZZ
+  // Principle (X) and guideline (Y) are always single digits; only the SC number (Z) can be 2 digits.
+  // e.g. wcag146 → 1.4.6 | wcag1411 → 1.4.11 | wcag2410 → 2.4.10
+  const scMatch = s.match(/^(\d)(\d)(\d{1,2})$/);
+  if (scMatch) {
+    return `WCAG ${scMatch[1]}.${scMatch[2]}.${scMatch[3]}`;
+  }
+
+  // Fallback: just capitalise prefix
+  return `WCAG ${s}`;
 }
 
 function buildAIIssueBrief(result) {
@@ -1055,7 +1288,7 @@ function buildSingleUserReport(result, isFirst) {
         const color = impactColors[impact] || '#6b7280';
         const bgColor = impactBgColors[impact] || '#f9fafb';
         const nodes = v.nodes || [];
-        const wcagTags = (v.tags || []).filter(t => t.startsWith('wcag') && t.length <= 8).map(t => t.replace('wcag', 'WCAG ')).join(', ');
+        const wcagTags = (v.tags || []).filter(t => /^wcag/i.test(t) && t.length <= 9).map(formatWcagTag).join(', ');
 
         let nodesHTML = '';
         nodes.slice(0, 5).forEach(n => {
@@ -1528,6 +1761,11 @@ async function loadAdminSettings() {
     if (!res.ok) return;
     const data = await res.json();
     input.value = data.max_concurrent_scans || 5;
+
+    // Reflect active scoring formula on the toggle buttons
+    const formula = data.scoring_formula || 'compliance';
+    $('score-formula-compliance')?.classList.toggle('active', formula === 'compliance');
+    $('score-formula-penalty')?.classList.toggle('active', formula === 'penalty');
   } catch (err) {
     console.error('Failed to load settings', err);
   }
@@ -1581,6 +1819,34 @@ function updateScanModeToggle() {
 function setScanMode(mode) {
   localStorage.setItem(LS_KEY_SCAN_MODE, mode);
   updateScanModeToggle();
+}
+
+/** Saves the chosen scoring formula to the backend and updates the toggle UI. */
+async function saveScoringFormula(formula) {
+  const status = $('score-formula-status');
+  // Optimistically update toggle
+  $('score-formula-compliance')?.classList.toggle('active', formula === 'compliance');
+  $('score-formula-penalty')?.classList.toggle('active', formula === 'penalty');
+  if (status) { status.textContent = 'Saving…'; status.className = 'upload-status'; }
+  try {
+    const res = await fetch(`${apiBase()}/api/v1/admin/settings`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${state.adminToken || ''}`
+      },
+      body: JSON.stringify({ scoring_formula: formula })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Failed to save formula');
+    if (status) {
+      status.textContent = `Formula set to "${formula === 'penalty' ? 'Penalty-Based' : 'Compliance-Aligned'}"`;
+      status.className = 'upload-status success';
+      setTimeout(() => { if (status) status.textContent = ''; }, 3000);
+    }
+  } catch (err) {
+    if (status) { status.textContent = err.message; status.className = 'upload-status error'; }
+  }
 }
 
 function openAdminDrawer() {
@@ -1670,6 +1936,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
   $('scan-mode-serial')?.addEventListener('click', () => setScanMode('serial'));
   $('scan-mode-parallel')?.addEventListener('click', () => setScanMode('parallel'));
+  $('score-formula-compliance')?.addEventListener('click', () => saveScoringFormula('compliance'));
+  $('score-formula-penalty')?.addEventListener('click', () => saveScoringFormula('penalty'));
   $('admin-save-concurrent')?.addEventListener('click', saveMaxConcurrent);
 
   $('coverage-upload-btn')?.addEventListener('click', uploadCoverageReport);

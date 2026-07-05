@@ -15,6 +15,18 @@ var impactPenalty = map[string]int{
 	"minor":    2,
 }
 
+// Scoring formula constants.
+const (
+	// FormulaCompliance scores by pass-rate: round(passCount / total * 100).
+	// Score tracks the compliance % shown in the UI.
+	FormulaCompliance = "compliance"
+
+	// FormulaPenalty deducts fixed points per violation severity:
+	// critical=-20, serious=-10, moderate=-5, minor=-2.
+	// Score drops quickly when high-severity issues accumulate.
+	FormulaPenalty = "penalty"
+)
+
 // ImpactBucket holds per-impact-level stats.
 type ImpactBucket struct {
 	Count           int    `json:"count"`
@@ -42,28 +54,47 @@ type ScoreReport struct {
 
 // Calculate computes an accessibility score (0–100), letter grade,
 // and compliance percentage from a list of violations and pass count.
-func Calculate(violations []models.Violation, passCount int) (score int, grade string, compliancePct float64) {
-	penalty := 0
-	for _, v := range violations {
-		if p, ok := impactPenalty[v.Impact]; ok {
-			penalty += p
-		} else {
-			penalty += 2
-		}
-	}
-
-	score = 100 - penalty
-	if score < 0 {
-		score = 0
-	}
-
-	grade = letterGrade(score)
-
+//
+// formula selects the scoring method:
+//
+//	"compliance" (default) — score = round(passCount / (passCount + violations) * 100)
+//	                          Score tracks the compliance % shown in the UI.
+//
+//	"penalty"              — score = max(0, 100 - Σ impactPenalty[impact])
+//	                          Each critical violation costs 20 pts, serious 10 pts,
+//	                          moderate 5 pts, minor 2 pts.
+func Calculate(violations []models.Violation, passCount int, formula string) (score int, grade string, compliancePct float64) {
+	// Compliance % is always computed the same way regardless of formula.
 	total := passCount + len(violations)
 	if total > 0 {
 		compliancePct = float64(passCount) / float64(total) * 100
 	}
 
+	switch formula {
+	case FormulaPenalty:
+		penalty := 0
+		for _, v := range violations {
+			if p, ok := impactPenalty[v.Impact]; ok {
+				penalty += p
+			} else {
+				penalty += 2
+			}
+		}
+		score = 100 - penalty
+		if score < 0 {
+			score = 0
+		}
+	default: // FormulaCompliance
+		score = int(math.Round(compliancePct))
+		if score < 0 {
+			score = 0
+		}
+		if score > 100 {
+			score = 100
+		}
+	}
+
+	grade = letterGrade(score)
 	return score, grade, compliancePct
 }
 

@@ -21,6 +21,10 @@ type Config struct {
     NodeBin            string
     AxeRunnerScript    string
     AllowPrivateScans  bool
+    // ScoringFormula controls how the 0-100 score is computed.
+    // "compliance" (default) = round(passCount / total * 100)
+    // "penalty"              = max(0, 100 - Σ impactPenalty)
+    ScoringFormula string
 }
 
 // global holds the runtime configuration and is accessed concurrently.
@@ -85,6 +89,30 @@ func SetMaxConcurrentScans(n int) {
     }
 }
 
+// GetScoringFormula returns the active scoring formula ("compliance" or "penalty").
+func GetScoringFormula() string {
+    mu.RLock()
+    defer mu.RUnlock()
+    if global == nil || global.ScoringFormula == "" {
+        return "compliance"
+    }
+    return global.ScoringFormula
+}
+
+// SetScoringFormula updates the scoring formula at runtime.
+// Accepted values: "compliance", "penalty". Unknown values are ignored.
+func SetScoringFormula(f string) {
+    if f != "compliance" && f != "penalty" {
+        return
+    }
+    mu.Lock()
+    defer mu.Unlock()
+    if global == nil {
+        global = &Config{}
+    }
+    global.ScoringFormula = f
+}
+
 // SetSecret updates the JWT secret at runtime.
 func SetSecret(newSecret string) {
     mu.Lock()
@@ -114,6 +142,10 @@ func Load() *Config {
         // Generate a random secret if none is supplied.
         secret = generateRandomSecret(32)
     }
+    formula := getEnv("SCORING_FORMULA", "compliance")
+    if formula != "compliance" && formula != "penalty" {
+        formula = "compliance"
+    }
     return &Config{
         Port:               getEnv("PORT", "8080"),
         ScanTimeoutSeconds: getEnvInt("SCAN_TIMEOUT_SECONDS", 180),
@@ -124,6 +156,7 @@ func Load() *Config {
         NodeBin:            getEnv("NODE_BIN", "node"),
         AxeRunnerScript:    getEnv("AXE_RUNNER_SCRIPT", "scripts/axe_runner.js"),
         AllowPrivateScans:  getEnvBool("ALLOW_PRIVATE_SCANS", false),
+        ScoringFormula:     formula,
     }
 }
 
