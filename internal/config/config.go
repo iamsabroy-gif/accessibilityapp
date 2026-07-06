@@ -20,11 +20,13 @@ type Config struct {
     AdminPassword      string  // separate password for the frontend admin panel
     NodeBin            string
     AxeRunnerScript    string
+    NativeRunnerScript string
     AllowPrivateScans  bool
     // ScoringFormula controls how the 0-100 score is computed.
     // "compliance" (default) = round(passCount / total * 100)
     // "penalty"              = max(0, 100 - Σ impactPenalty)
     ScoringFormula string
+    ActiveEngine   string // "axe" or "native"
 }
 
 // global holds the runtime configuration and is accessed concurrently.
@@ -113,6 +115,29 @@ func SetScoringFormula(f string) {
     global.ScoringFormula = f
 }
 
+// GetActiveEngine returns the currently active engine ("axe" or "native").
+func GetActiveEngine() string {
+    mu.RLock()
+    defer mu.RUnlock()
+    if global == nil || global.ActiveEngine == "" {
+        return "axe"
+    }
+    return global.ActiveEngine
+}
+
+// SetActiveEngine updates the active engine at runtime.
+func SetActiveEngine(e string) {
+    if e != "axe" && e != "native" {
+        return
+    }
+    mu.Lock()
+    defer mu.Unlock()
+    if global == nil {
+        global = &Config{}
+    }
+    global.ActiveEngine = e
+}
+
 // SetSecret updates the JWT secret at runtime.
 func SetSecret(newSecret string) {
     mu.Lock()
@@ -155,8 +180,10 @@ func Load() *Config {
         AdminPassword:      getEnv("ADMIN_PASSWORD", ""),
         NodeBin:            getEnv("NODE_BIN", "node"),
         AxeRunnerScript:    getEnv("AXE_RUNNER_SCRIPT", "scripts/axe_runner.js"),
+        NativeRunnerScript: getEnv("NATIVE_RUNNER_SCRIPT", "scripts/native_runner.js"),
         AllowPrivateScans:  getEnvBool("ALLOW_PRIVATE_SCANS", false),
         ScoringFormula:     formula,
+        ActiveEngine:       getEnv("ACTIVE_ENGINE", "axe"),
     }
 }
 

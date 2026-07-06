@@ -33,7 +33,7 @@ func main() {
 	config.InitGlobal(cfg)
 
 	// Scanner
-	axeRunner := scanner.NewAxeRunner(cfg.NodeBin, cfg.AxeRunnerScript)
+	axeRunner := scanner.NewAxeRunner(cfg.NodeBin, cfg.AxeRunnerScript, cfg.NativeRunnerScript)
 	coveragePath := os.Getenv("WCAG_COVERAGE_REPORT")
 	if coveragePath == "" {
 		coveragePath = "wcag_coverage_report.xlsx"

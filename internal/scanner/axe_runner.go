@@ -60,21 +60,32 @@ type axeRule struct {
 
 // AxeRunner implements Scanner using axe-core via a Node.js subprocess.
 type AxeRunner struct {
-	nodeBin    string
-	scriptPath string
+    nodeBin          string
+    axeScriptPath    string
+    nativeScriptPath string
 }
 
-// NewAxeRunner creates a new AxeRunner with the given node binary and script path.
-func NewAxeRunner(nodeBin, scriptPath string) *AxeRunner {
-	return &AxeRunner{nodeBin: nodeBin, scriptPath: scriptPath}
+// NewAxeRunner creates a new AxeRunner with the given node binary and script paths.
+func NewAxeRunner(nodeBin, axeScriptPath, nativeScriptPath string) *AxeRunner {
+    return &AxeRunner{
+        nodeBin:          nodeBin,
+        axeScriptPath:    axeScriptPath,
+        nativeScriptPath: nativeScriptPath,
+    }
 }
 
 // Scan runs axe-core against the given URL and returns a structured ScanResult.
 func (a *AxeRunner) Scan(ctx context.Context, url string, wcagLevel string, depth int) (*models.ScanResult, error) {
-	start := time.Now()
+    start := time.Now()
+
+    // Determine which script to run based on active engine config
+    scriptPath := a.axeScriptPath
+    if config.GetActiveEngine() == "native" {
+        scriptPath = a.nativeScriptPath
+    }
 
     // Execute the node script with depth argument (passed for future use)
-    cmd := exec.CommandContext(ctx, a.nodeBin, a.scriptPath, url, wcagLevel)
+    cmd := exec.CommandContext(ctx, a.nodeBin, scriptPath, url, wcagLevel)
     output, err := cmd.CombinedOutput()
     if err != nil {
         // Try to parse JSON error from stdout (which may contain {"error":...})

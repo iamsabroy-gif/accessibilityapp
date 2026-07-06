@@ -275,6 +275,7 @@ func (h *Handler) GetSettings(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"max_concurrent_scans": config.GetMaxConcurrentScans(),
 		"scoring_formula":      config.GetScoringFormula(),
+		"active_engine":        config.GetActiveEngine(),
 	})
 }
 
@@ -283,6 +284,7 @@ func (h *Handler) UpdateSettings(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		MaxConcurrentScans int    `json:"max_concurrent_scans"`
 		ScoringFormula     string `json:"scoring_formula"`
+		ActiveEngine       string `json:"active_engine"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body", err.Error())
@@ -296,9 +298,14 @@ func (h *Handler) UpdateSettings(w http.ResponseWriter, r *http.Request) {
 		config.SetScoringFormula(req.ScoringFormula)
 		h.Logger.Info("scoring_formula updated via API", zap.String("scoring_formula", req.ScoringFormula))
 	}
+	if req.ActiveEngine != "" {
+		config.SetActiveEngine(req.ActiveEngine)
+		h.Logger.Info("active_engine updated via API", zap.String("active_engine", req.ActiveEngine))
+	}
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"max_concurrent_scans": config.GetMaxConcurrentScans(),
 		"scoring_formula":      config.GetScoringFormula(),
+		"active_engine":        config.GetActiveEngine(),
 	})
 }
 

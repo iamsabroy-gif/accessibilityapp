@@ -1766,48 +1766,24 @@ async function loadAdminSettings() {
     const formula = data.scoring_formula || 'compliance';
     $('score-formula-compliance')?.classList.toggle('active', formula === 'compliance');
     $('score-formula-penalty')?.classList.toggle('active', formula === 'penalty');
+
+    // Reflect active scanner engine on the toggle buttons
+    const engine = data.active_engine || 'axe';
+    $('engine-axe')?.classList.toggle('active', engine === 'axe');
+    $('engine-native')?.classList.toggle('active', engine === 'native');
   } catch (err) {
     console.error('Failed to load settings', err);
   }
 }
 
-async function saveMaxConcurrent() {
-  const input = $('admin-max-concurrent');
-  const status = $('admin-concurrent-status');
-  const btn = $('admin-save-concurrent');
-  if (!input || !status || !btn) return;
+function toggleScoringFormula(formula) {
+  $('score-formula-compliance')?.classList.toggle('active', formula === 'compliance');
+  $('score-formula-penalty')?.classList.toggle('active', formula === 'penalty');
+}
 
-  const val = parseInt(input.value, 10);
-  if (isNaN(val) || val < 1) {
-    status.textContent = 'Invalid value';
-    status.className = 'upload-status error';
-    return;
-  }
-
-  btn.disabled = true;
-  status.textContent = 'Saving...';
-  status.className = 'upload-status';
-
-  try {
-    const res = await fetch(`${apiBase()}/api/v1/admin/settings`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${state.adminToken || ''}`
-      },
-      body: JSON.stringify({ max_concurrent_scans: val })
-    });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || 'Failed to save');
-    status.textContent = 'Saved!';
-    status.className = 'upload-status success';
-    setTimeout(() => { if (status.textContent === 'Saved!') status.textContent = ''; }, 3000);
-  } catch (err) {
-    status.textContent = err.message;
-    status.className = 'upload-status error';
-  } finally {
-    btn.disabled = false;
-  }
+function toggleActiveEngine(engine) {
+  $('engine-axe')?.classList.toggle('active', engine === 'axe');
+  $('engine-native')?.classList.toggle('active', engine === 'native');
 }
 
 function updateScanModeToggle() {
@@ -1821,13 +1797,27 @@ function setScanMode(mode) {
   updateScanModeToggle();
 }
 
-/** Saves the chosen scoring formula to the backend and updates the toggle UI. */
-async function saveScoringFormula(formula) {
-  const status = $('score-formula-status');
-  // Optimistically update toggle
-  $('score-formula-compliance')?.classList.toggle('active', formula === 'compliance');
-  $('score-formula-penalty')?.classList.toggle('active', formula === 'penalty');
-  if (status) { status.textContent = 'Saving…'; status.className = 'upload-status'; }
+async function saveAllSettings() {
+  const status = $('admin-overall-status');
+  const btn = $('admin-save-all');
+  if (!status || !btn) return;
+
+  const maxConcurrentInput = $('admin-max-concurrent');
+  const maxConcurrent = maxConcurrentInput ? parseInt(maxConcurrentInput.value, 10) : 5;
+
+  if (isNaN(maxConcurrent) || maxConcurrent < 1) {
+    status.textContent = 'Invalid Max Concurrent value';
+    status.className = 'upload-status error';
+    return;
+  }
+
+  const formula = $('score-formula-penalty')?.classList.contains('active') ? 'penalty' : 'compliance';
+  const engine = $('engine-native')?.classList.contains('active') ? 'native' : 'axe';
+
+  btn.disabled = true;
+  status.textContent = 'Saving settings...';
+  status.className = 'upload-status';
+
   try {
     const res = await fetch(`${apiBase()}/api/v1/admin/settings`, {
       method: 'POST',
@@ -1835,17 +1825,22 @@ async function saveScoringFormula(formula) {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${state.adminToken || ''}`
       },
-      body: JSON.stringify({ scoring_formula: formula })
+      body: JSON.stringify({
+        max_concurrent_scans: maxConcurrent,
+        scoring_formula: formula,
+        active_engine: engine
+      })
     });
     const data = await res.json();
-    if (!res.ok) throw new Error(data.error || 'Failed to save formula');
-    if (status) {
-      status.textContent = `Formula set to "${formula === 'penalty' ? 'Penalty-Based' : 'Compliance-Aligned'}"`;
-      status.className = 'upload-status success';
-      setTimeout(() => { if (status) status.textContent = ''; }, 3000);
-    }
+    if (!res.ok) throw new Error(data.error || 'Failed to save settings');
+    status.textContent = 'All settings saved successfully!';
+    status.className = 'upload-status success';
+    setTimeout(() => { if (status.textContent === 'All settings saved successfully!') status.textContent = ''; }, 3000);
   } catch (err) {
-    if (status) { status.textContent = err.message; status.className = 'upload-status error'; }
+    status.textContent = err.message;
+    status.className = 'upload-status error';
+  } finally {
+    btn.disabled = false;
   }
 }
 
@@ -1936,9 +1931,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
   $('scan-mode-serial')?.addEventListener('click', () => setScanMode('serial'));
   $('scan-mode-parallel')?.addEventListener('click', () => setScanMode('parallel'));
-  $('score-formula-compliance')?.addEventListener('click', () => saveScoringFormula('compliance'));
-  $('score-formula-penalty')?.addEventListener('click', () => saveScoringFormula('penalty'));
-  $('admin-save-concurrent')?.addEventListener('click', saveMaxConcurrent);
+  $('score-formula-compliance')?.addEventListener('click', () => toggleScoringFormula('compliance'));
+  $('score-formula-penalty')?.addEventListener('click', () => toggleScoringFormula('penalty'));
+  $('engine-axe')?.addEventListener('click', () => toggleActiveEngine('axe'));
+  $('engine-native')?.addEventListener('click', () => toggleActiveEngine('native'));
+  $('admin-save-all')?.addEventListener('click', saveAllSettings);
 
   $('coverage-upload-btn')?.addEventListener('click', uploadCoverageReport);
   $('admin-refresh-token')?.addEventListener('click', async () => {

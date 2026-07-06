@@ -410,6 +410,18 @@
       </div>
 
       <div class="admin-toggle-section" style="margin-top: 1rem;">
+        <label class="form-label">Active Scanner Engine</label>
+        <div class="toggle-row">
+          <button id="engine-axe" class="toggle-btn active" type="button" data-engine="axe">Axe Core</button>
+          <button id="engine-native" class="toggle-btn" type="button" data-engine="native">Native Validation</button>
+        </div>
+        <p class="field-hint">
+          <strong>Axe Core:</strong> Default scanning engine using Deque's axe-core + custom rules.<br>
+          <strong>Native Validation:</strong> Homegrown static evaluation module running natively.
+        </p>
+      </div>
+
+      <div class="admin-toggle-section" style="margin-top: 1rem;">
         <label class="form-label">Scoring Formula</label>
         <div class="toggle-row">
           <button id="score-formula-compliance" class="toggle-btn active" type="button" data-formula="compliance">Compliance-Aligned</button>
@@ -419,21 +431,20 @@
           <strong>Compliance-Aligned:</strong> score = pass-rules ÷ total-rules × 100. Score tracks the compliance % on screen.<br>
           <strong>Penalty-Based:</strong> score = 100 − Σ penalties (critical −20, serious −10, moderate −5, minor −2). Drops quickly for severe violations.
         </p>
-        <p id="score-formula-status" class="upload-status" role="status" aria-live="polite"></p>
       </div>
 
       <div class="admin-toggle-section" style="margin-top: 1rem;">
         <label for="admin-max-concurrent" class="form-label">Max Concurrent Scans</label>
         <p class="field-hint">Limit backend concurrency (e.g. 1 for strict serial execution across all parallel requests).</p>
-        <div style="display: flex; gap: 8px;">
-          <input id="admin-max-concurrent" type="number" min="1" max="100" class="modal-input" style="width: 80px;" />
-          <button id="admin-save-concurrent" class="btn-secondary" type="button">Save</button>
-        </div>
-        <p id="admin-concurrent-status" class="upload-status" role="status" aria-live="polite"></p>
+        <input id="admin-max-concurrent" type="number" min="1" max="100" class="modal-input" style="width: 80px;" />
       </div>
 
+      <div class="admin-toggle-section" style="margin-top: 1.5rem; text-align: right;">
+        <p id="admin-overall-status" class="upload-status" role="status" aria-live="polite" style="margin-bottom: 8px; text-align: left;"></p>
+        <button id="admin-save-all" class="modal-btn-primary" type="button" style="width: 100%;">Save Settings</button>
+      </div>
 
-      <button id="admin-refresh-token" class="btn-secondary" type="button">Force Token Refresh</button>
+      <button id="admin-refresh-token" class="btn-secondary" type="button" style="margin-top: 2rem;">Force Token Refresh</button>
 
       <div class="admin-upload-section">
         <label for="coverage-file-input">WCAG Coverage Report</label>

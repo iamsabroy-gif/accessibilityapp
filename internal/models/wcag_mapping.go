@@ -12,6 +12,7 @@ var WCAGMap = map[string][]string{
     "meaningful-sequence-absolute":      {"1.3.2"},
     "meaningful-sequence-grid":          {"1.3.2"},
     "video-captions-present":      {"1.2.2"},
+    "video-captions-track":        {"1.2.2"},  // H95: missing attributes on <track kind="captions">
     "video-captions-track-src":    {"1.2.2"},  // H95: missing src on <track kind="captions">
     "video-captions-track-lang":   {"1.2.2"},  // H95: missing srclang/label on <track kind="captions">
     // Core AXE rules (partial list – extend as needed)
@@ -62,6 +63,7 @@ var WCAGMap = map[string][]string{
     // Existing custom checks (previously unregistered)
     "color-only-indicator":              {"1.4.1"},
     "focus-order-cycling":               {"2.1.2", "2.4.3"},
+    "focus-order-modal-escape":          {"2.1.2", "2.4.3"},
     "meaningful-sequence-letter-spacing": {"1.3.2"},
 
     // Phase 1 – DOM-only new checks
