@@ -82,4 +82,13 @@ var WCAGMap = map[string][]string{
     "sensory-characteristics":   {"1.3.3"}, // text heuristic – shape/colour/location cues
     "pointer-gestures":          {"2.5.1"}, // multi-touch without single-pointer fallback
     "timing-adjustable":         {"2.2.1"}, // meta refresh + short timers
+
+	// Phase 4 – WCAG 2.2 new criteria
+	"target-size":               {"2.5.8"},  // dom   — 24×24px minimum target size
+	"accessible-authentication": {"3.3.8"},  // dom   — CAPTCHA / cognitive function test detection
+	"dragging-movements":        {"2.5.7"},  // dom   — drag-and-drop without single-pointer alternative
+	"focus-not-obscured":        {"2.4.11"}, // pptr  — focused element hidden by fixed/sticky overlay
+	"consistent-help":           {"3.2.6"},  // dom   — help mechanism consistency (always incomplete)
+	"redundant-entry":           {"3.3.7"},  // dom   — multi-step form redundant data entry (always incomplete)
+	"focus-appearance":          {"2.4.13"}, // pptr  — focus indicator area + contrast
 }
