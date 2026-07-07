@@ -9,7 +9,8 @@ import (
 )
 
 type EN301549Options struct {
-	Format string // "html" | "pdf"
+	Format     string // "html" | "pdf"
+	ReportType string // "" (default), "EAA", or "BITV"
 }
 
 // GenerateEN301549 produces an EN 301 549 ACR in HTML (and optionally PDF).
@@ -34,7 +35,22 @@ func GenerateEN301549(cr *models.ComplianceReport, opts EN301549Options) (string
     </style>
 </head>
 <body>
+    {{if eq .Type "EAA"}}
+    <h1>European Accessibility Act (EAA) Conformance Statement</h1>
+    <div style="background: #f0f7ff; border-left: 4px solid #0056b3; padding: 15px; margin-bottom: 20px;">
+        <strong>Pursuant to Directive (EU) 2019/882</strong><br>
+        This statement documents accessibility conformance in accordance with the European Accessibility Act, effective for private sector entities from 28 June 2025. Technical conformance is evaluated against EN 301 549.
+    </div>
+    {{else if eq .Type "BITV"}}
+    <h1>Erklärung zur Barrierefreiheit (BITV 2.0) / EN 301 549 ACR</h1>
+    <div style="background: #fdfae6; border-left: 4px solid #d4b106; padding: 15px; margin-bottom: 20px;">
+        <strong>Gemäß § 12d BGG und BITV 2.0</strong><br>
+        Dieser Bericht dokumentiert die Konformität mit der Barrierefreie-Informationstechnik-Verordnung (BITV 2.0) und der Europäischen Norm EN 301 549. 
+        Bei Beschwerden oder für ein Schlichtungsverfahren wenden Sie sich bitte an die Schlichtungsstelle nach § 16 BGG (BFIT-Bund).
+    </div>
+    {{else}}
     <h1>Accessibility Conformance Report (EN 301 549)</h1>
+    {{end}}
     
     <h2>1. Product Information</h2>
     <table>
@@ -193,6 +209,7 @@ func GenerateEN301549(cr *models.ComplianceReport, opts EN301549Options) (string
 	var buf bytes.Buffer
 	err = tmpl.Execute(&buf, map[string]interface{}{
 		"Report":       cr,
+		"Type":         opts.ReportType,
 		"Chapter7Conf": ch7Conf,
 		"Chapter7Rem":  ch7Rem,
 		"Chapter4":     EN301549Clause4Rows,

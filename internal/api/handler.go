@@ -531,3 +531,243 @@ func (h *Handler) ReportEN301549(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte(html))
 	}
 }
+
+// ReportUK handles POST /api/v1/report/uk
+func (h *Handler) ReportUK(w http.ResponseWriter, r *http.Request) {
+	req, result, err := h.processReportRequest(w, r)
+	if err != nil {
+		return
+	}
+
+	compReport, err := scoring.BuildComplianceReport(result, "ADA", req.Meta)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to build compliance report", err.Error())
+		return
+	}
+
+	opts := report.UKOptions{Format: req.Format}
+	html, pdf, err := report.GenerateUKEquality(compReport, opts)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to generate UK report", err.Error())
+		return
+	}
+
+	if req.Format == "pdf" {
+		w.Header().Set("Content-Type", "application/pdf")
+		w.Header().Set("Content-Disposition", `attachment; filename="uk_report.pdf"`)
+		w.Write(pdf)
+	} else {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.Write([]byte(html))
+	}
+}
+
+// ReportAODA handles POST /api/v1/report/aoda
+func (h *Handler) ReportAODA(w http.ResponseWriter, r *http.Request) {
+	req, result, err := h.processReportRequest(w, r)
+	if err != nil {
+		return
+	}
+
+	compReport, err := scoring.BuildComplianceReport(result, "ADA", req.Meta)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to build compliance report", err.Error())
+		return
+	}
+
+	opts := report.AODAOptions{Format: req.Format}
+	html, pdf, err := report.GenerateAODA(compReport, opts)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to generate AODA report", err.Error())
+		return
+	}
+
+	if req.Format == "pdf" {
+		w.Header().Set("Content-Type", "application/pdf")
+		w.Header().Set("Content-Disposition", `attachment; filename="aoda_report.pdf"`)
+		w.Write(pdf)
+	} else {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.Write([]byte(html))
+	}
+}
+
+// ReportACA handles POST /api/v1/report/aca
+func (h *Handler) ReportACA(w http.ResponseWriter, r *http.Request) {
+	req, result, err := h.processReportRequest(w, r)
+	if err != nil {
+		return
+	}
+
+	compReport, err := scoring.BuildComplianceReport(result, "ADA", req.Meta)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to build compliance report", err.Error())
+		return
+	}
+
+	opts := report.ACAOptions{Format: req.Format}
+	html, pdf, err := report.GenerateACA(compReport, opts)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to generate ACA report", err.Error())
+		return
+	}
+
+	if req.Format == "pdf" {
+		w.Header().Set("Content-Type", "application/pdf")
+		w.Header().Set("Content-Disposition", `attachment; filename="aca_report.pdf"`)
+		w.Write(pdf)
+	} else {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.Write([]byte(html))
+	}
+}
+
+// ReportDDA handles POST /api/v1/report/dda
+func (h *Handler) ReportDDA(w http.ResponseWriter, r *http.Request) {
+	req, result, err := h.processReportRequest(w, r)
+	if err != nil {
+		return
+	}
+
+	compReport, err := scoring.BuildComplianceReport(result, "ADA", req.Meta)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to build compliance report", err.Error())
+		return
+	}
+
+	opts := report.DDAOptions{Format: req.Format}
+	html, pdf, err := report.GenerateDDA(compReport, opts)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to generate DDA report", err.Error())
+		return
+	}
+
+	if req.Format == "pdf" {
+		w.Header().Set("Content-Type", "application/pdf")
+		w.Header().Set("Content-Disposition", `attachment; filename="dda_report.pdf"`)
+		w.Write(pdf)
+	} else {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.Write([]byte(html))
+	}
+}
+
+// ReportGIGW handles POST /api/v1/report/gigw
+func (h *Handler) ReportGIGW(w http.ResponseWriter, r *http.Request) {
+	req, result, err := h.processReportRequest(w, r)
+	if err != nil {
+		return
+	}
+
+	compReport, err := scoring.BuildComplianceReport(result, "ADA", req.Meta)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to build compliance report", err.Error())
+		return
+	}
+
+	opts := report.GIGWOptions{Format: req.Format}
+	html, pdf, err := report.GenerateGIGW(compReport, opts)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to generate GIGW report", err.Error())
+		return
+	}
+
+	if req.Format == "pdf" {
+		w.Header().Set("Content-Type", "application/pdf")
+		w.Header().Set("Content-Disposition", `attachment; filename="gigw_report.pdf"`)
+		w.Write(pdf)
+	} else {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.Write([]byte(html))
+	}
+}
+
+// ReportCVAA handles POST /api/v1/report/cvaa
+func (h *Handler) ReportCVAA(w http.ResponseWriter, r *http.Request) {
+	req, result, err := h.processReportRequest(w, r)
+	if err != nil {
+		return
+	}
+
+	compReport, err := scoring.BuildComplianceReport(result, "ADA", req.Meta)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to build compliance report", err.Error())
+		return
+	}
+
+	opts := report.CVAAOptions{Format: req.Format}
+	html, pdf, err := report.GenerateCVAA(compReport, opts)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to generate CVAA report", err.Error())
+		return
+	}
+
+	if req.Format == "pdf" {
+		w.Header().Set("Content-Type", "application/pdf")
+		w.Header().Set("Content-Disposition", `attachment; filename="cvaa_report.pdf"`)
+		w.Write(pdf)
+	} else {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.Write([]byte(html))
+	}
+}
+
+// ReportEAA handles POST /api/v1/report/eaa (European Accessibility Act)
+func (h *Handler) ReportEAA(w http.ResponseWriter, r *http.Request) {
+	req, result, err := h.processReportRequest(w, r)
+	if err != nil {
+		return
+	}
+
+	compReport, err := scoring.BuildComplianceReport(result, "EN301549", req.Meta)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to build compliance report", err.Error())
+		return
+	}
+
+	opts := report.EN301549Options{Format: req.Format, ReportType: "EAA"}
+	html, pdf, err := report.GenerateEN301549(compReport, opts)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to generate EAA report", err.Error())
+		return
+	}
+
+	if req.Format == "pdf" {
+		w.Header().Set("Content-Type", "application/pdf")
+		w.Header().Set("Content-Disposition", `attachment; filename="eaa_report.pdf"`)
+		w.Write(pdf)
+	} else {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.Write([]byte(html))
+	}
+}
+
+// ReportBITV handles POST /api/v1/report/bitv (German BITV 2.0)
+func (h *Handler) ReportBITV(w http.ResponseWriter, r *http.Request) {
+	req, result, err := h.processReportRequest(w, r)
+	if err != nil {
+		return
+	}
+
+	compReport, err := scoring.BuildComplianceReport(result, "EN301549", req.Meta)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to build compliance report", err.Error())
+		return
+	}
+
+	opts := report.EN301549Options{Format: req.Format, ReportType: "BITV"}
+	html, pdf, err := report.GenerateEN301549(compReport, opts)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to generate BITV report", err.Error())
+		return
+	}
+
+	if req.Format == "pdf" {
+		w.Header().Set("Content-Type", "application/pdf")
+		w.Header().Set("Content-Disposition", `attachment; filename="bitv_report.pdf"`)
+		w.Write(pdf)
+	} else {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.Write([]byte(html))
+	}
+}

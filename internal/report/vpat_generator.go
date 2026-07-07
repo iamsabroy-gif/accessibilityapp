@@ -48,7 +48,7 @@ func GenerateVPAT(cr *models.ComplianceReport, opts VPATOptions) (string, []byte
     </style>
 </head>
 <body>
-    <h1>Accessibility Conformance Report (VPAT&reg; Version 2.4)</h1>
+    <h1>Accessibility Conformance Report (VPAT&reg; Version 2.5Rev)</h1>
     
     <h2>Chapter 1: Product Information</h2>
     <table>
