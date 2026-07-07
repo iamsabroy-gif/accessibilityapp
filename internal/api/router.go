@@ -36,6 +36,9 @@ func NewRouter(h *Handler, logger *zap.Logger) *chi.Mux {
 			r.Use(rateLimitMiddleware())
 			r.Post("/scan", jwtAuthMiddleware(h.Scan))
 			r.Post("/score", jwtAuthMiddleware(h.ScoreOnly))
+			r.Post("/report/ada", jwtAuthMiddleware(h.ReportADA))
+			r.Post("/report/vpat", jwtAuthMiddleware(h.ReportVPAT))
+			r.Post("/report/en301549", jwtAuthMiddleware(h.ReportEN301549))
 		})
 	})
 
@@ -48,6 +51,7 @@ func NewRouter(h *Handler, logger *zap.Logger) *chi.Mux {
 		// If the file exists on disk, serve it directly.
 		// Otherwise serve index.html so client-side routing works.
 		path := filepath.Join(frontendDir, filepath.Clean("/"+req.URL.Path))
+		w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
 		if info, err := os.Stat(path); err == nil && !info.IsDir() {
 			fs.ServeHTTP(w, req)
 			return

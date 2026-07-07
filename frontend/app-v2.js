@@ -219,7 +219,7 @@ function scheduleTokenRenewal() {
 
 function setDownloadButtonsDisabled(disabled) {
   state.isScanningDiscoveredLinks = disabled;
-  const ids = ['download-report-btn', 'download-md-btn', 'download-xlsx-btn'];
+  const ids = ['download-report-btn', 'download-md-btn', 'download-xlsx-btn', 'generate-compliance-btn'];
   ids.forEach(id => {
     const btn = $(id);
     if (btn) {
@@ -230,7 +230,7 @@ function setDownloadButtonsDisabled(disabled) {
 }
 
 // ─── Scan ──────────────────────────────────────────────────────
-async function runScan(url, wcagLevel, depth = 0) {
+async function runScan(url, wcagLevel, depth = 0, shouldGenerateReport = false, reportMeta = null, reportStandard = 'ada', reportFormat = 'html') {
   setView('loading');
   $('loading-url').textContent = url;
   const depthMsg = $('loading-depth-msg');
@@ -256,7 +256,7 @@ async function runScan(url, wcagLevel, depth = 0) {
       state.token = null;
       const retried = await ensureToken();
       if (!retried) { setView('hero'); return; }
-      return runScan(url, wcagLevel, depth);
+      return runScan(url, wcagLevel, depth, shouldGenerateReport, reportMeta, reportStandard, reportFormat);
     }
 
     const data = await res.json();
@@ -267,6 +267,14 @@ async function runScan(url, wcagLevel, depth = 0) {
     renderResults(data);
     setView('results');
     scheduleTokenRenewal();
+    
+    // Auto-generate compliance report if requested
+    if (shouldGenerateReport && reportMeta) {
+      // Small delay to let the results view render first
+      setTimeout(() => {
+        generateComplianceReportDirect(reportStandard, reportFormat, reportMeta, data);
+      }, 500);
+    }
 
     // If depth=1, scan discovered links in parallel from the frontend
     const links = data.discovered_links || [];
@@ -1512,7 +1520,253 @@ function downloadUserReport() {
   setTimeout(() => URL.revokeObjectURL(objectURL), 1000);
 }
 
-// ─── Excel Report Download ────────────────────────────────────
+// ─── Compliance Report Generation ─────────────────────────────
+
+/**
+ * Registry of all supported compliance standards.
+ * Each entry maps the UI value to:
+ *   endpoint  - the backend route key (ada | vpat | en301549)
+ *   label     - human-readable name used in toasts/filenames
+ *   basis     - the underlying technical standard
+ *   note      - shown in the info card inside the modal
+ */
+const COMPLIANCE_STANDARDS = {
+  ada: {
+    endpoint: 'ada',
+    label: 'ADA Title III',
+    jurisdiction: '🇺🇸 United States',
+    basis: 'WCAG 2.1 Level AA (per DOJ 2024 rule)',
+    note: 'Applies to places of public accommodation. Courts uniformly apply WCAG 2.1 AA (Robles v. Domino\'s, 9th Cir. 2019). DOJ April 2024 rule mandates AA for Title II entities; Title III follows the same standard in practice.',
+  },
+  vpat: {
+    endpoint: 'vpat',
+    label: 'Section 508 VPAT',
+    jurisdiction: '🇺🇸 United States (Federal)',
+    basis: 'WCAG 2.0 Level AA + Section 508 (2017 refresh)',
+    note: 'Required for technology procured by US federal agencies under the Rehabilitation Act. Produced as a Voluntary Product Accessibility Template (VPAT® INT edition). Note: Section 508 references WCAG 2.0, not 2.1.',
+  },
+  cvaa: {
+    endpoint: 'ada',
+    label: 'CVAA',
+    jurisdiction: '🇺🇸 United States (FCC)',
+    basis: 'WCAG 2.0 Level AA (telecom & video context)',
+    note: 'The 21st Century Communications and Video Accessibility Act covers advanced communications services and video programming. Web-content obligations overlap with ADA/Section 508. This report uses the ADA framework as the basis.',
+  },
+  en301549: {
+    endpoint: 'en301549',
+    label: 'EN 301 549',
+    jurisdiction: '🇪🇺 European Union',
+    basis: 'WCAG 2.1 Level AA (Clause 9)',
+    note: 'The harmonised EU standard for ICT accessibility. Clause 9 = WCAG 2.1 AA verbatim. Mandated by the EU Web Accessibility Directive (2016/2102) for public sector and the European Accessibility Act (2019/882) for private sector from June 2025.',
+  },
+  eaa: {
+    endpoint: 'en301549',
+    label: 'EAA (European Accessibility Act)',
+    jurisdiction: '🇪🇺 European Union',
+    basis: 'EN 301 549 → WCAG 2.1 Level AA',
+    note: 'The European Accessibility Act (Directive 2019/882) came into force for private sector from 28 June 2025. Technical conformance is measured against EN 301 549 V3.2.1. This report uses the EN 301 549 ACR format.',
+  },
+  equality_act: {
+    endpoint: 'ada',
+    label: 'Equality Act 2010 (UK)',
+    jurisdiction: '🇬🇧 United Kingdom',
+    basis: 'WCAG 2.1 Level AA (PSBAR / BS 8878)',
+    note: 'Post-Brexit UK law covering disability discrimination. Public sector bodies must follow Public Sector Bodies Accessibility Regulations (PSBAR) mandating WCAG 2.1 AA. This report uses the ADA/WCAG 2.1 AA framework.',
+  },
+  aoda: {
+    endpoint: 'ada',
+    label: 'AODA',
+    jurisdiction: '🇨🇦 Canada — Ontario',
+    basis: 'WCAG 2.0 Level AA (IASR 2012, updated 2021)',
+    note: 'The Accessibility for Ontarians with Disabilities Act requires WCAG 2.0 AA for large private-sector organisations. Many organisations voluntarily target WCAG 2.1 AA. This report is based on the ADA/WCAG 2.1 AA framework.',
+  },
+  aca: {
+    endpoint: 'ada',
+    label: 'ACA (Accessible Canada Act)',
+    jurisdiction: '🇨🇦 Canada — Federal',
+    basis: 'WCAG 2.1 Level AA (proposed federal standard)',
+    note: 'The Accessible Canada Act (S.C. 2019, c. 10) applies to federally regulated organisations. Technical standards are still being formalised; WCAG 2.1 AA is the de facto benchmark. This report uses the ADA/WCAG 2.1 AA framework.',
+  },
+  bitv: {
+    endpoint: 'en301549',
+    label: 'BITV 2.0',
+    jurisdiction: '🇩🇪 Germany',
+    basis: 'EN 301 549 → WCAG 2.1 Level AA',
+    note: 'The Barrierefreie-Informationstechnik-Verordnung (BITV 2.0) implements the EU Web Accessibility Directive for German federal public bodies. It references EN 301 549 V3.2.1 and WCAG 2.1 AA. This report uses the EN 301 549 ACR format.',
+  },
+  dda: {
+    endpoint: 'ada',
+    label: 'DDA (Australia)',
+    jurisdiction: '🇦🇺 Australia',
+    basis: 'WCAG 2.1 Level AA (ACAG / AGMO advisory)',
+    note: 'Australia\'s Disability Discrimination Act 1992 prohibits disability discrimination in goods and services including websites. The Australian Human Rights Commission advises WCAG 2.1 AA conformance. This report uses the WCAG 2.1 AA / ADA framework.',
+  },
+  gigw: {
+    endpoint: 'ada',
+    label: 'GIGW (India)',
+    jurisdiction: '🇮🇳 India',
+    basis: 'WCAG 2.0 / 2.1 Level AA (GIGW 3.0)',
+    note: 'Guidelines for Indian Government Websites v3.0 (2023) mandate WCAG 2.0/2.1 AA for all central and state government portals under the Rights of Persons with Disabilities Act, 2016. This report uses the ADA/WCAG 2.1 AA framework.',
+  },
+};
+
+/**
+ * Updates the info card in the compliance modal when the user changes the
+ * standard dropdown. Shows jurisdiction, technical basis, and a plain-English note.
+ */
+function updateComplianceInfoCard() {
+  const sel = document.getElementById('modal-compliance-standard');
+  const card = document.getElementById('compliance-standard-info');
+  if (!sel || !card) return;
+  const info = COMPLIANCE_STANDARDS[sel.value];
+  if (!info) { card.innerHTML = ''; return; }
+  card.innerHTML = `
+    <span style="font-weight:600;color:var(--text-primary);">${info.jurisdiction}</span>
+    &nbsp;·&nbsp;
+    <span style="color:var(--text-accent);">${info.basis}</span>
+    <br>
+    ${info.note}
+    ${info.endpoint !== sel.value ? `<br><em style="color:var(--text-muted);">Report format: ${COMPLIANCE_STANDARDS[info.endpoint]?.label || info.endpoint} template</em>` : ''}
+  `;
+}
+
+/**
+ * Calls the backend compliance report endpoint and either opens HTML in a new
+ * tab or triggers a PDF download.
+ *
+ * @param {string} standard  - any key from COMPLIANCE_STANDARDS
+ * @param {string} format    - "html" | "pdf"
+ * @param {object} meta      - { product_name, vendor_name, product_version, contact_info, notes }
+ * @param {object} scanData  - the ScanResult from the last scan (provides the URL)
+ */
+async function generateComplianceReportDirect(standard, format, meta, scanData) {
+  if (!scanData || !scanData.url) {
+    showToast('No scan result available. Please run a scan first.', 'error');
+    return;
+  }
+
+  const stdInfo = COMPLIANCE_STANDARDS[standard] || { endpoint: standard, label: standard.toUpperCase() };
+  const label = stdInfo.label;
+  const endpoint = stdInfo.endpoint;        // resolved backend route
+  const toast = showToast(`Generating ${label} report…`, 'info', true);
+
+
+  const ok = await ensureToken();
+  if (!ok) {
+    toast?.hide();
+    showToast('Session expired — please refresh the page.', 'error');
+    return;
+  }
+
+  try {
+    const apiEndpoint = `/api/v1/report/${endpoint}`;
+    const payload = {
+      url: scanData.url,
+      format: format || 'html',
+      meta: meta || {},
+    };
+
+    const res = await fetch(`${apiBase()}${apiEndpoint}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${state.token}`,
+      },
+      body: JSON.stringify(payload),
+    });
+
+    toast?.hide();
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
+      showToast(`Failed to generate ${label} report: ${err.error || 'Unknown error'}`, 'error');
+      return;
+    }
+
+    if (format === 'pdf') {
+      const blob = await res.blob();
+      const objectURL = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      let host = 'report';
+      try { host = new URL(scanData.url).hostname || host; } catch (_) {}
+      link.href = objectURL;
+      link.download = `${host.replace(/[^a-z0-9.-]+/gi, '-')}-${standard}-report.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      setTimeout(() => URL.revokeObjectURL(objectURL), 2000);
+      showToast(`${label} PDF downloaded.`, 'success');
+    } else {
+      // Open HTML report in new tab
+      const html = await res.text();
+      const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
+      const objectURL = URL.createObjectURL(blob);
+      const tab = window.open(objectURL, '_blank');
+      if (!tab) {
+        // Fallback: force download if popup was blocked
+        const link = document.createElement('a');
+        let host = 'report';
+        try { host = new URL(scanData.url).hostname || host; } catch (_) {}
+        link.href = objectURL;
+        link.download = `${host.replace(/[^a-z0-9.-]+/gi, '-')}-${standard}-report.html`;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        showToast(`${label} report downloaded (popup blocked).`, 'success');
+      } else {
+        showToast(`${label} report opened in a new tab.`, 'success');
+      }
+      setTimeout(() => URL.revokeObjectURL(objectURL), 5000);
+    }
+  } catch (err) {
+    toast?.hide();
+    showToast(`Error generating ${label} report: ${err.message}`, 'error');
+  }
+}
+
+/**
+ * Reads the compliance modal form values and triggers generateComplianceReportDirect().
+ * Called by the "Generate" button inside the results-view compliance modal.
+ */
+async function submitComplianceModal() {
+  if (!state.scanResult) {
+    showToast('No scan result available.', 'error');
+    return;
+  }
+  const standard = document.getElementById('modal-compliance-standard')?.value || 'ada';
+  const format   = document.getElementById('modal-compliance-format')?.value || 'html';
+  const meta = {
+    product_name:    document.getElementById('modal-comp-product-name')?.value || '',
+    vendor_name:     document.getElementById('modal-comp-vendor-name')?.value || '',
+    product_version: document.getElementById('modal-comp-version')?.value || '',
+    contact_info:    document.getElementById('modal-comp-contact')?.value || '',
+    notes:           document.getElementById('modal-comp-notes')?.value || '',
+  };
+  closeComplianceModal();
+  await generateComplianceReportDirect(standard, format, meta, state.scanResult);
+}
+
+function openComplianceModal() {
+  const modal = document.getElementById('compliance-report-modal');
+  if (!modal) return;
+  modal.classList.add('open');
+  modal.setAttribute('aria-hidden', 'false');
+  modal.removeAttribute('inert');
+  updateComplianceInfoCard();
+  setTimeout(() => document.getElementById('modal-compliance-standard')?.focus(), 100);
+  document.body.style.overflow = 'hidden';
+}
+
+function closeComplianceModal() {
+  const modal = document.getElementById('compliance-report-modal');
+  if (!modal) return;
+  modal.classList.remove('open');
+  modal.setAttribute('aria-hidden', 'true');
+  modal.setAttribute('inert', '');
+  document.body.style.overflow = '';
+}
+
+
 function downloadExcelReport() {
   if (state.isScanningDiscoveredLinks) {
     showError('Please wait for the scan to complete before downloading the report.');
@@ -1928,13 +2182,43 @@ document.addEventListener('DOMContentLoaded', () => {
   const urlInput = $('url-input');
   const scanBtn  = $('scan-btn');
 
+  const autoReportToggle = document.getElementById('auto-report-toggle');
+  const compliancePanel = document.getElementById('compliance-panel');
+  if (autoReportToggle && compliancePanel) {
+    autoReportToggle.addEventListener('change', (e) => {
+      if (e.target.checked) {
+        compliancePanel.classList.remove('hidden');
+      } else {
+        compliancePanel.classList.add('hidden');
+      }
+    });
+  }
+
   form?.addEventListener('submit', async (e) => {
     e.preventDefault();
     const url = urlInput?.value.trim();
     if (!url) { showError('Please enter a URL to scan.'); return; }
     const depth     = parseInt(document.querySelector('input[name="scan-depth"]:checked')?.value ?? '0', 10);
+    
+    const shouldGenerateReport = autoReportToggle ? autoReportToggle.checked : false;
+    let reportMeta = null;
+    let reportStandard = 'ada';
+    let reportFormat = 'html';
+    
+    if (shouldGenerateReport) {
+      reportStandard = document.getElementById('compliance-standard')?.value || 'ada';
+      reportFormat = document.getElementById('compliance-format')?.value || 'html';
+      reportMeta = {
+        product_name: document.getElementById('comp-product-name')?.value || '',
+        vendor_name: document.getElementById('comp-vendor-name')?.value || '',
+        product_version: document.getElementById('comp-version')?.value || '',
+        contact_info: document.getElementById('comp-contact')?.value || '',
+        notes: document.getElementById('comp-notes')?.value || ''
+      };
+    }
+    
     scanBtn.disabled = true;
-    await runScan(url, 'AAA', depth);
+    await runScan(url, 'AAA', depth, shouldGenerateReport, reportMeta, reportStandard, reportFormat);
     scanBtn.disabled = false;
   });
 
@@ -1943,10 +2227,18 @@ document.addEventListener('DOMContentLoaded', () => {
   $('download-report-btn')?.addEventListener('click', downloadUserReport);
   $('download-md-btn')?.addEventListener('click', downloadAIIssueBrief);
   $('download-xlsx-btn')?.addEventListener('click', downloadExcelReport);
+  $('generate-compliance-btn')?.addEventListener('click', openComplianceModal);
   $('coverage-menu-btn')?.addEventListener('click', showCoverage);
   $('coverage-back-btn')?.addEventListener('click', () => setView(state.previousView === 'coverage' ? 'hero' : state.previousView));
   $('coverage-search')?.addEventListener('input', renderCoverageRows);
   $('coverage-status-filter')?.addEventListener('change', renderCoverageRows);
+
+  // ── Compliance report modal ──────────────────────
+  $('compliance-modal-overlay')?.addEventListener('click', closeComplianceModal);
+  $('compliance-modal-cancel')?.addEventListener('click', closeComplianceModal);
+  $('compliance-modal-submit')?.addEventListener('click', submitComplianceModal);
+  document.getElementById('modal-compliance-standard')?.addEventListener('change', updateComplianceInfoCard);
+
 
   // ── Admin trigger (5 clicks on hidden dot) ───────
   $('admin-trigger')?.addEventListener('click', triggerAdminClick);
@@ -2003,94 +2295,3 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 
-// Compliance Report Logic
-const complianceModal = document.getElementById('compliance-modal');
-const openComplianceModalBtn = document.getElementById('open-compliance-modal-btn');
-const closeComplianceModalBtn = document.getElementById('close-compliance-modal');
-const complianceForm = document.getElementById('compliance-form');
-const generateComplianceBtn = document.getElementById('generate-compliance-btn');
-
-if (openComplianceModalBtn) {
-  openComplianceModalBtn.addEventListener('click', () => {
-    if (complianceModal) complianceModal.classList.add('open');
-  });
-}
-
-if (closeComplianceModalBtn) {
-  closeComplianceModalBtn.addEventListener('click', () => {
-    if (complianceModal) complianceModal.classList.remove('open');
-  });
-}
-
-if (generateComplianceBtn) {
-  generateComplianceBtn.addEventListener('click', async (e) => {
-    e.preventDefault();
-    if (!currentScanResult || !currentScanResult.url) {
-      showError("No scan results available to generate a report.");
-      return;
-    }
-
-    const standard = document.getElementById('compliance-standard').value;
-    const format = document.getElementById('compliance-format').value;
-    const meta = {
-      product_name: document.getElementById('comp-product-name').value,
-      vendor_name: document.getElementById('comp-vendor-name').value,
-      product_version: document.getElementById('comp-version').value,
-      contact_info: document.getElementById('comp-contact').value,
-      notes: document.getElementById('comp-notes').value
-    };
-
-    const originalBtnText = generateComplianceBtn.textContent;
-    generateComplianceBtn.textContent = 'Generating...';
-    generateComplianceBtn.disabled = true;
-
-    // Immediately close modal and show toast
-    complianceModal.classList.remove('open');
-    const toast = showToast(`Generating ${standard.toUpperCase()} report in progress...`, 'info', true);
-
-    try {
-      const res = await fetch(`/api/v1/report/${standard}`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${sessionToken}`
-        },
-        body: JSON.stringify({
-          url: currentScanResult.url,
-          format: format,
-          depth: currentScanResult.summary ? currentScanResult.summary.max_depth : 0,
-          meta: meta
-        })
-      });
-
-      if (!res.ok) {
-        let errMsg = `Failed to generate ${standard.toUpperCase()} report.`;
-        try {
-          const errData = await res.json();
-          errMsg = errData.error || errMsg;
-        } catch(e) {}
-        throw new Error(errMsg);
-      }
-
-      // Handle download
-      const blob = await res.blob();
-      const downloadUrl = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = downloadUrl;
-      const ext = format === 'pdf' ? 'pdf' : 'html';
-      a.download = `${standard}_report.${ext}`;
-      document.body.appendChild(a);
-      a.click();
-      window.URL.revokeObjectURL(downloadUrl);
-      a.remove();
-      if (toast) toast.update('Report generated successfully!', 'success');
-      if (toast) setTimeout(() => toast.hide(), 3000);
-    } catch (err) {
-      if (toast) toast.hide();
-      showError(err.message);
-    } finally {
-      generateComplianceBtn.textContent = originalBtnText;
-      generateComplianceBtn.disabled = false;
-    }
-  });
-}

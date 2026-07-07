@@ -41,6 +41,79 @@ tags:
 # ─────────────────────────────────────────────────────────────────────────────
 paths:
 
+  /api/v1/report/ada:
+    post:
+      summary: Generate ADA Title III Report
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                url:
+                  type: string
+                format:
+                  type: string
+                  enum: [html, pdf]
+                depth:
+                  type: integer
+                meta:
+                  $ref: '#/components/schemas/ReportMeta'
+      responses:
+        '200':
+          description: Successful report generation
+  /api/v1/report/vpat:
+    post:
+      summary: Generate VPAT Section 508 Report
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                url:
+                  type: string
+                format:
+                  type: string
+                  enum: [html, pdf]
+                depth:
+                  type: integer
+                meta:
+                  $ref: '#/components/schemas/ReportMeta'
+      responses:
+        '200':
+          description: Successful report generation
+  /api/v1/report/en301549:
+    post:
+      summary: Generate EN 301 549 Report
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                url:
+                  type: string
+                format:
+                  type: string
+                  enum: [html, pdf]
+                depth:
+                  type: integer
+                meta:
+                  $ref: '#/components/schemas/ReportMeta'
+      responses:
+        '200':
+          description: Successful report generation
+
   # ── SCAN ───────────────────────────────────────────────────────────────────
   /scan:
     post:

@@ -6,7 +6,7 @@
   <title>AccessScan — WCAG Accessibility Scanner</title>
   <meta name="description" content="Scan any website for WCAG 2.1 accessibility compliance. Get detailed violation reports, impact breakdowns, and an accessibility score powered by axe-core." />
   <meta name="theme-color" content="#070b18" />
-  <link rel="stylesheet" href="style.css?v=20260705c" />
+  <link rel="stylesheet" href="style-v2.css" />
   <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
 </head>
 <body>
@@ -36,11 +36,13 @@
     </div>
   </header>
 
-  <!-- Error banner (clickable when relevant) -->
   <div id="error-banner" class="hidden" role="alert" aria-live="assertive">
     <span aria-hidden="true">⚠️</span>
     <span id="error-msg"></span>
   </div>
+  
+  <!-- Global Toast Container -->
+  <div id="toast-container" class="toast-container" aria-live="polite"></div>
 
   <!-- ═══════════════════════════════════════
        HERO / INPUT VIEW
@@ -91,6 +93,83 @@
               <label for="depth-0" title="Scan only the given URL (faster)">0 — Single page</label>
               <input type="radio" name="scan-depth" id="depth-1" value="1" />
               <label for="depth-1" title="Scan the URL and up to 10 internal links (slower)">1 — Follow links</label>
+            </div>
+          </div>
+
+          <div class="advanced-toggle" style="margin-top: 15px; text-align: left; display: flex; justify-content: center;">
+            <label style="cursor: pointer; display: inline-flex; align-items: center; gap: 8px; color: var(--text-secondary); font-size: 0.9rem;">
+              <input type="checkbox" id="auto-report-toggle" style="accent-color: var(--primary);">
+              Auto-Generate Compliance Report (PDF/HTML)
+            </label>
+          </div>
+          
+          <div id="compliance-panel" class="hidden" style="margin-top: 15px; padding: 15px; background: rgba(255,255,255,0.03); border-radius: 8px; border: 1px solid rgba(255,255,255,0.05); text-align: left;">
+            <h4 style="margin: 0 0 15px 0; font-size: 0.95rem; color: var(--text-primary);">Report Settings</h4>
+            <div style="display:flex; gap:15px; margin-bottom:15px;">
+              <div class="form-group" style="flex:1;">
+                <label class="form-label" style="font-size: 0.8rem" for="compliance-standard">Standard</label>
+                <select id="compliance-standard" class="modal-input" style="padding: 6px 10px; font-size: 0.85rem">
+                  <optgroup label="🇺🇸 United States">
+                    <option value="ada">ADA Title III</option>
+                    <option value="vpat">Section 508 VPAT</option>
+                    <option value="cvaa">CVAA — 21st Century Communications</option>
+                  </optgroup>
+                  <optgroup label="🇪🇺 European Union">
+                    <option value="en301549">EN 301 549</option>
+                    <option value="eaa">EAA — European Accessibility Act</option>
+                  </optgroup>
+                  <optgroup label="🇬🇧 United Kingdom">
+                    <option value="equality_act">Equality Act 2010</option>
+                  </optgroup>
+                  <optgroup label="🇨🇦 Canada">
+                    <option value="aoda">AODA — Ontario</option>
+                    <option value="aca">ACA — Federal</option>
+                  </optgroup>
+                  <optgroup label="🇩🇪 Germany">
+                    <option value="bitv">BITV 2.0</option>
+                  </optgroup>
+                  <optgroup label="🇦🇺 Australia">
+                    <option value="dda">DDA 1992</option>
+                  </optgroup>
+                  <optgroup label="🇮🇳 India">
+                    <option value="gigw">GIGW 3.0</option>
+                  </optgroup>
+                </select>
+              </div>
+              <div class="form-group" style="flex:1;">
+                <label class="form-label" style="font-size: 0.8rem" for="compliance-format">Format</label>
+                <select id="compliance-format" class="modal-input" style="padding: 6px 10px; font-size: 0.85rem">
+                  <option value="html">HTML</option>
+                  <option value="pdf">PDF</option>
+                </select>
+              </div>
+            </div>
+            
+            <div style="display:flex; gap:15px; margin-bottom:15px;">
+              <div class="form-group" style="flex:1;">
+                <label class="form-label" style="font-size: 0.8rem" for="comp-product-name">Product Name</label>
+                <input type="text" id="comp-product-name" class="modal-input" style="padding: 6px 10px; font-size: 0.85rem" placeholder="e.g. AccessScan Pro" />
+              </div>
+              <div class="form-group" style="flex:1;">
+                <label class="form-label" style="font-size: 0.8rem" for="comp-vendor-name">Vendor Name</label>
+                <input type="text" id="comp-vendor-name" class="modal-input" style="padding: 6px 10px; font-size: 0.85rem" placeholder="e.g. Acme Corp" />
+              </div>
+            </div>
+            
+            <div style="display:flex; gap:15px; margin-bottom:15px;">
+              <div class="form-group" style="flex:1;">
+                <label class="form-label" style="font-size: 0.8rem" for="comp-version">Version</label>
+                <input type="text" id="comp-version" class="modal-input" style="padding: 6px 10px; font-size: 0.85rem" placeholder="e.g. 1.2.0" />
+              </div>
+              <div class="form-group" style="flex:1;">
+                <label class="form-label" style="font-size: 0.8rem" for="comp-contact">Contact Info</label>
+                <input type="text" id="comp-contact" class="modal-input" style="padding: 6px 10px; font-size: 0.85rem" placeholder="e.g. a11y@acme.com" />
+              </div>
+            </div>
+            
+            <div class="form-group" style="margin-bottom:0;">
+              <label class="form-label" style="font-size: 0.8rem" for="comp-notes">Notes</label>
+              <textarea id="comp-notes" rows="1" class="modal-input" style="padding: 6px 10px; font-size: 0.85rem" placeholder="Any additional comments"></textarea>
             </div>
           </div>
         </form>
@@ -185,6 +264,12 @@
             <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><path d="M8 13h2l2 3 2-3h2"/>
           </svg>
           Download Excel (.xlsx)
+        </button>
+        <button id="generate-compliance-btn" class="new-scan-btn compliance-report-btn" type="button" aria-label="Generate ADA, Section 508 VPAT, or EN 301 549 compliance report">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true">
+            <path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>
+          </svg>
+          Compliance Report
         </button>
       </div>
 
@@ -323,6 +408,119 @@
 
     </div>
   </section>
+
+  <!-- ═══════════════════════════════════════
+       COMPLIANCE REPORT MODAL
+       Triggered from the Generate Compliance Report button in results view
+  ═══════════════════════════════════════ -->
+  <div
+    id="compliance-report-modal"
+    class="modal-wrap"
+    role="dialog"
+    aria-modal="true"
+    aria-label="Generate compliance report"
+    aria-hidden="true"
+    inert
+  >
+    <div id="compliance-modal-overlay" class="modal-overlay"></div>
+    <div class="modal-box" style="max-width:580px;">
+      <div class="modal-header">
+        <span class="modal-icon" aria-hidden="true">📋</span>
+        <div>
+          <div class="modal-title">Generate Compliance Report</div>
+          <div class="modal-subtitle">10 international standards · HTML or PDF output</div>
+        </div>
+      </div>
+      <div class="modal-body">
+
+        <!-- Standard + Format row -->
+        <div style="display:flex; gap:12px; margin-bottom:10px;">
+          <div class="form-group" style="flex:2;">
+            <label class="form-label" style="font-size:0.82rem;" for="modal-compliance-standard">Compliance Standard</label>
+            <select id="modal-compliance-standard" class="modal-input" style="padding:7px 10px; font-size:0.85rem;">
+              <optgroup label="🇺🇸 United States">
+                <option value="ada">ADA Title III — Americans with Disabilities Act</option>
+                <option value="vpat">Section 508 VPAT — Rehabilitation Act (federal)</option>
+                <option value="cvaa">CVAA — 21st Century Comm. &amp; Video Accessibility</option>
+              </optgroup>
+              <optgroup label="🇪🇺 European Union">
+                <option value="en301549">EN 301 549 — EU ICT Accessibility Standard</option>
+                <option value="eaa">EAA — European Accessibility Act (June 2025)</option>
+              </optgroup>
+              <optgroup label="🇬🇧 United Kingdom">
+                <option value="equality_act">Equality Act 2010 — UK (post-Brexit)</option>
+              </optgroup>
+              <optgroup label="🇨🇦 Canada">
+                <option value="aoda">AODA — Accessibility for Ontarians with Disabilities</option>
+                <option value="aca">ACA — Accessible Canada Act (Federal)</option>
+              </optgroup>
+              <optgroup label="🇩🇪 Germany">
+                <option value="bitv">BITV 2.0 — Barrierefreie IT-Verordnung</option>
+              </optgroup>
+              <optgroup label="🇦🇺 Australia">
+                <option value="dda">DDA — Disability Discrimination Act 1992</option>
+              </optgroup>
+              <optgroup label="🇮🇳 India">
+                <option value="gigw">GIGW — Guidelines for Indian Government Websites</option>
+              </optgroup>
+            </select>
+          </div>
+          <div class="form-group" style="flex:1;">
+            <label class="form-label" style="font-size:0.82rem;" for="modal-compliance-format">Format</label>
+            <select id="modal-compliance-format" class="modal-input" style="padding:7px 10px; font-size:0.85rem;">
+              <option value="html">HTML (new tab)</option>
+              <option value="pdf">PDF (download)</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- Dynamic info card shown when a standard is selected -->
+        <div id="compliance-standard-info" style="
+          background: rgba(99,102,241,0.07);
+          border: 1px solid rgba(99,102,241,0.2);
+          border-radius: 8px;
+          padding: 10px 14px;
+          margin-bottom: 14px;
+          font-size: 0.78rem;
+          color: var(--text-secondary);
+          line-height: 1.6;
+        "></div>
+
+        <!-- Meta fields -->
+        <div style="display:flex; gap:12px; margin-bottom:12px;">
+          <div class="form-group" style="flex:1;">
+            <label class="form-label" style="font-size:0.82rem;" for="modal-comp-product-name">Product / Website Name</label>
+            <input type="text" id="modal-comp-product-name" class="modal-input" style="padding:7px 10px; font-size:0.85rem;" placeholder="e.g. My Website" />
+          </div>
+          <div class="form-group" style="flex:1;">
+            <label class="form-label" style="font-size:0.82rem;" for="modal-comp-vendor-name">Organisation / Vendor</label>
+            <input type="text" id="modal-comp-vendor-name" class="modal-input" style="padding:7px 10px; font-size:0.85rem;" placeholder="e.g. Acme Corp" />
+          </div>
+        </div>
+        <div style="display:flex; gap:12px; margin-bottom:12px;">
+          <div class="form-group" style="flex:1;">
+            <label class="form-label" style="font-size:0.82rem;" for="modal-comp-version">Version</label>
+            <input type="text" id="modal-comp-version" class="modal-input" style="padding:7px 10px; font-size:0.85rem;" placeholder="e.g. 1.0.0" />
+          </div>
+          <div class="form-group" style="flex:1;">
+            <label class="form-label" style="font-size:0.82rem;" for="modal-comp-contact">Contact Email</label>
+            <input type="text" id="modal-comp-contact" class="modal-input" style="padding:7px 10px; font-size:0.85rem;" placeholder="e.g. a11y@org.com" />
+          </div>
+        </div>
+        <div class="form-group" style="margin-bottom:4px;">
+          <label class="form-label" style="font-size:0.82rem;" for="modal-comp-notes">Notes (optional)</label>
+          <textarea id="modal-comp-notes" rows="2" class="modal-input" style="padding:7px 10px; font-size:0.85rem;" placeholder="Additional context for the report"></textarea>
+        </div>
+        <p style="font-size:0.72rem; color:var(--text-muted); margin-top:12px; line-height:1.5;">
+          ⚠️ Automated scan only. Does not replace a manual audit or legal review.
+        </p>
+      </div>
+      <div class="modal-footer">
+        <button id="compliance-modal-cancel" class="modal-btn-secondary" type="button">Cancel</button>
+        <button id="compliance-modal-submit" class="modal-btn-primary" type="button">Generate Report</button>
+      </div>
+    </div>
+  </div>
 
   <!-- ═══════════════════════════════════════
        ADMIN PASSWORD MODAL
@@ -467,8 +665,10 @@
     </div>
   </aside>
 
+
+
 </div><!-- #app -->
 
-<script src="app.js?v=20260705e"></script>
+<script src="app-v2.js"></script>
 </body>
 </html>

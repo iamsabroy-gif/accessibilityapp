@@ -36,7 +36,7 @@ var WCAGMap = map[string][]string{
     "duplicate-id-aria":         {"4.1.1"},
     "empty-heading":             {"2.4.6"},
     "form-field-multiple-labels": {"3.3.2"},
-    "heading-order":             {"2.4.10"},
+    "heading-order":             {"1.3.1"},
     "html-has-lang":             {"3.1.1"},
     "html-lang-valid":           {"3.1.2"},
     "image-alt":                 {"1.1.1"},

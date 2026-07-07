@@ -4,7 +4,7 @@ module.exports = {
   description: 'Keyboard focus indicators must meet minimum area (perimeter × 2px) and contrast ratio (3:1) requirements.',
   help: 'Use outline-width ≥2px and ensure the outline color has ≥3:1 contrast against the adjacent background.',
   helpUrl: 'https://www.w3.org/WAI/WCAG22/Understanding/focus-appearance.html',
-  tags: ['wcag22aa', 'wcag2413'],
+  tags: ['wcag22aaa', 'wcag2413'],
   impact: 'serious',
 
   evaluate: async function(page) {
@@ -117,7 +117,7 @@ module.exports = {
           description: 'No visible keyboard focus indicator detected (no outline or box-shadow).',
           help: 'Add an outline or box-shadow to focused elements with ≥2px width and ≥3:1 contrast.',
           helpUrl: 'https://www.w3.org/WAI/WCAG22/Understanding/focus-appearance.html',
-          tags: ['wcag22aa', 'wcag2413'],
+          tags: ['wcag22aaa', 'wcag2413'],
           nodes: [{
             html: html,
             target: [tag],
@@ -163,7 +163,7 @@ module.exports = {
           description: 'Focus indicator area is below minimum (perimeter × 2px).',
           help: 'Increase outline-width to at least 2px.',
           helpUrl: 'https://www.w3.org/WAI/WCAG22/Understanding/focus-appearance.html',
-          tags: ['wcag22aa', 'wcag2413'],
+          tags: ['wcag22aaa', 'wcag2413'],
           nodes: [{
             html: html,
             target: [tag],
@@ -177,7 +177,7 @@ module.exports = {
           description: 'Focus indicator has insufficient contrast ratio against adjacent background (≥3:1 required).',
           help: 'Choose an outline color with at least 3:1 contrast against the background behind the focus indicator.',
           helpUrl: 'https://www.w3.org/WAI/WCAG22/Understanding/focus-appearance.html',
-          tags: ['wcag22aa', 'wcag2413'],
+          tags: ['wcag22aaa', 'wcag2413'],
           nodes: [{
             html: html,
             target: [tag],

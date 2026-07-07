@@ -120,7 +120,7 @@ func GetActiveEngine() string {
     mu.RLock()
     defer mu.RUnlock()
     if global == nil || global.ActiveEngine == "" {
-        return "axe"
+        return "native"
     }
     return global.ActiveEngine
 }
@@ -183,7 +183,7 @@ func Load() *Config {
         NativeRunnerScript: getEnv("NATIVE_RUNNER_SCRIPT", "scripts/native_runner.js"),
         AllowPrivateScans:  getEnvBool("ALLOW_PRIVATE_SCANS", false),
         ScoringFormula:     formula,
-        ActiveEngine:       getEnv("ACTIVE_ENGINE", "axe"),
+        ActiveEngine:       getEnv("ACTIVE_ENGINE", "native"),
     }
 }
 

@@ -3,6 +3,9 @@ package scoring
 import (
 	"fmt"
 	"math"
+	"sort"
+	"strconv"
+	"strings"
 
 	"github.com/webaccessibility/server/internal/models"
 )
@@ -29,27 +32,27 @@ const (
 
 // ImpactBucket holds per-impact-level stats.
 type ImpactBucket struct {
-	Count           int    `json:"count"`
-	PenaltyPerIssue int    `json:"penalty_per_issue"`
-	TotalPenalty    int    `json:"total_penalty"`
+	Count           int      `json:"count"`
+	PenaltyPerIssue int      `json:"penalty_per_issue"`
+	TotalPenalty    int      `json:"total_penalty"`
 	Issues          []string `json:"issues,omitempty"` // violation IDs
 }
 
 // ScoreReport is the structured scoring response returned by /api/v1/score.
 type ScoreReport struct {
-	URL            string                  `json:"url"`
-	WCAGLevel      string                  `json:"wcag_level"`
-	Score          int                     `json:"score"`
-	Grade          string                  `json:"grade"`
-	CompliancePct  float64                 `json:"compliance_pct"`
-	TotalViolations int                    `json:"total_violations"`
-	TotalPasses    int                     `json:"total_passes"`
-	TotalPenalty   int                     `json:"total_penalty"`
-	Breakdown       map[string]ImpactBucket  `json:"breakdown"`
-	Recommendation  string                   `json:"recommendation"`
-	AudioEyeScore   int                      `json:"audioeye_score"`
-	AudioEyeGrade   string                   `json:"audioeye_grade"`
-	AudioEyeDetail  *models.AudioEyeResult   `json:"audioeye_detail,omitempty"`
+	URL             string                  `json:"url"`
+	WCAGLevel       string                  `json:"wcag_level"`
+	Score           int                     `json:"score"`
+	Grade           string                  `json:"grade"`
+	CompliancePct   float64                 `json:"compliance_pct"`
+	TotalViolations int                     `json:"total_violations"`
+	TotalPasses     int                     `json:"total_passes"`
+	TotalPenalty    int                     `json:"total_penalty"`
+	Breakdown       map[string]ImpactBucket `json:"breakdown"`
+	Recommendation  string                  `json:"recommendation"`
+	AudioEyeScore   int                     `json:"audioeye_score"`
+	AudioEyeGrade   string                  `json:"audioeye_grade"`
+	AudioEyeDetail  *models.AudioEyeResult  `json:"audioeye_detail,omitempty"`
 }
 
 // Calculate computes an accessibility score (0–100), letter grade,
@@ -293,4 +296,147 @@ func letterGrade(score int) string {
 	default:
 		return "F"
 	}
+}
+
+// conformanceLevelForSC maps SCScore data to a conformance level.
+// Pass hasRule=false if no rule in WCAGMap covers this SC.
+func conformanceLevelForSC(scID string, sc models.SCScore, hasRule bool) models.ConformanceLevel {
+	if !hasRule || sc.TestedElements == 0 {
+		return models.ConformanceNotEvaluated
+	}
+	if sc.FailedElements == 0 {
+		return models.ConformanceSupports
+	}
+	if sc.FailureRate < 0.5 {
+		return models.ConformancePartiallySupports
+	}
+	return models.ConformanceDoesNotSupport
+}
+
+// narrativeForConformance picks the correct template string from SCMetadata.
+func narrativeForConformance(m models.SCMetadata, c models.ConformanceLevel) string {
+	switch c {
+	case models.ConformanceSupports:
+		return m.SupportNarrative
+	case models.ConformancePartiallySupports:
+		return m.PartialNarrative
+	case models.ConformanceDoesNotSupport:
+		return m.FailureNarrative
+	default:
+		return ""
+	}
+}
+
+// scIDLess sorts "1.1.1" < "1.2.1" < "2.4.1" numerically by dot-separated parts.
+func scIDLess(a, b string) bool {
+	pa := strings.Split(a, ".")
+	pb := strings.Split(b, ".")
+	for i := 0; i < len(pa) && i < len(pb); i++ {
+		na, _ := strconv.Atoi(pa[i])
+		nb, _ := strconv.Atoi(pb[i])
+		if na != nb {
+			return na < nb
+		}
+	}
+	return len(pa) < len(pb)
+}
+
+// BuildComplianceReport constructs a ComplianceReport from a completed ScanResult.
+// standard must be "ADA", "508", or "EN301549".
+// Runs CalculateAudioEye internally if result.AudioEye is nil.
+func BuildComplianceReport(
+	result *models.ScanResult,
+	standard string,
+	meta models.ReportMeta,
+) (*models.ComplianceReport, error) {
+	ae := result.AudioEye
+	if ae == nil {
+		aeResult := CalculateAudioEye(result.Violations, result.PassRules, models.WCAGMap)
+		ae = &aeResult
+	}
+
+	// Build set of SCs that have at least one rule in WCAGMap.
+	scHasRule := map[string]bool{}
+	for _, scs := range models.WCAGMap {
+		for _, sc := range scs {
+			scHasRule[sc] = true
+		}
+	}
+
+	report := &models.ComplianceReport{
+		URL: result.URL, ScannedAt: result.ScannedAt,
+		Standard: standard, WCAGLevel: result.Summary.Level,
+		ReportDate: result.ScannedAt.Format("2006-01-02"), Meta: meta,
+	}
+
+	for scID, scMeta := range models.SCRegistry {
+		// WCAG 2.2 excluded from all three main conformance tables.
+		if scMeta.WCAGVersion == "2.2" {
+			continue
+		}
+
+		// 508 only covers WCAG 2.0. WCAG 2.1-only SCs -> Not Applicable in 508 mode.
+		if standard == "508" && scMeta.WCAGVersion != "2.0" {
+			row := models.SCConformanceRow{
+				SCID: scID, SCName: scMeta.SCName, Level: scMeta.Level,
+				WCAGVersion: scMeta.WCAGVersion, EN301549Clause: scMeta.EN301549Clause,
+				Conformance: models.ConformanceNotApplicable,
+				Remarks:     "This criterion was introduced in WCAG 2.1. Section 508 (2017 refresh) references WCAG 2.0 and does not require this criterion.",
+			}
+			report.Rows = append(report.Rows, row)
+			report.NotApplCount++
+			continue
+		}
+
+		scScore, hasSCData := ae.SCBreakdown[scID]
+		hasRule := scHasRule[scID]
+
+		var conformance models.ConformanceLevel
+		var remarks string
+
+		if scMeta.NotAutomatable {
+			conformance = models.ConformanceNotEvaluated
+			remarks = scMeta.LimitationNote
+		} else {
+			conformance = conformanceLevelForSC(scID, scScore, hasRule)
+			remarks = narrativeForConformance(scMeta, conformance)
+			if scMeta.LimitationNote != "" {
+				remarks += " " + scMeta.LimitationNote
+			}
+		}
+
+		var scorePtr *models.SCScore
+		if hasSCData {
+			s := scScore
+			scorePtr = &s
+		}
+
+		row := models.SCConformanceRow{
+			SCID: scID, SCName: scMeta.SCName, Level: scMeta.Level,
+			WCAGVersion: scMeta.WCAGVersion, EN301549Clause: scMeta.EN301549Clause,
+			Conformance: conformance, Remarks: remarks,
+			ManualTestingRequired: scMeta.ManualTestingRequired,
+			SCScore:               scorePtr,
+		}
+		report.Rows = append(report.Rows, row)
+
+		switch conformance {
+		case models.ConformanceSupports:
+			report.SupportsCount++
+		case models.ConformancePartiallySupports:
+			report.PartialCount++
+		case models.ConformanceDoesNotSupport:
+			report.FailCount++
+		case models.ConformanceNotEvaluated:
+			report.NotEvalCount++
+		case models.ConformanceNotApplicable:
+			report.NotApplCount++
+		}
+	}
+
+	sort.Slice(report.Rows, func(i, j int) bool {
+		return scIDLess(report.Rows[i].SCID, report.Rows[j].SCID)
+	})
+	report.TotalSCs = len(report.Rows)
+	return report, nil
 }

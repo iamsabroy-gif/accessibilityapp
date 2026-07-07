@@ -404,3 +404,130 @@ func writeJSON(w http.ResponseWriter, status int, v interface{}) {
 func writeError(w http.ResponseWriter, status int, msg, details string) {
 	writeJSON(w, status, models.ErrorResponse{Error: msg, Details: details})
 }
+
+type ReportRequest struct {
+	URL    string            `json:"url"`
+	Format string            `json:"format"`
+	Depth  int               `json:"depth"`
+	Meta   models.ReportMeta `json:"meta"`
+}
+
+func (h *Handler) processReportRequest(w http.ResponseWriter, r *http.Request) (*ReportRequest, *models.ScanResult, error) {
+	var req ReportRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body", err.Error())
+		return nil, nil, fmt.Errorf("invalid request body")
+	}
+	if req.URL == "" {
+		writeError(w, http.StatusBadRequest, "url is required", "")
+		return nil, nil, fmt.Errorf("url is required")
+	}
+	if err := validateURL(req.URL); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid url", err.Error())
+		return nil, nil, err
+	}
+	if isPrivateURL(req.URL) && !config.GetAllowPrivateScans() {
+		writeError(w, http.StatusForbidden, "scanning private/internal addresses is not allowed", "")
+		return nil, nil, fmt.Errorf("scanning private/internal addresses is not allowed")
+	}
+	if req.Format != "pdf" {
+		req.Format = "html" // default
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), h.ScanTimeout)
+	defer cancel()
+
+	h.Logger.Info("starting scan for compliance report", zap.String("url", req.URL))
+	result, err := h.Scanner.Scan(ctx, req.URL, "AAA", req.Depth)
+	if err != nil {
+		h.Logger.Error("scan failed", zap.String("url", req.URL), zap.Error(err))
+		writeError(w, http.StatusInternalServerError, "scan failed", err.Error())
+		return nil, nil, err
+	}
+
+	return &req, result, nil
+}
+
+// ReportADA handles POST /api/v1/report/ada
+func (h *Handler) ReportADA(w http.ResponseWriter, r *http.Request) {
+	req, result, err := h.processReportRequest(w, r)
+	if err != nil {
+		return
+	}
+
+	opts := report.ADAOptions{Format: req.Format, Meta: req.Meta}
+	ada, err := report.GenerateADA(result, opts)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to generate ADA report", err.Error())
+		return
+	}
+
+	if req.Format == "pdf" {
+		w.Header().Set("Content-Type", "application/pdf")
+		w.Header().Set("Content-Disposition", `attachment; filename="ada_report.pdf"`)
+		w.Write(ada.PDF)
+	} else {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.Write([]byte(ada.HTML))
+	}
+}
+
+// ReportVPAT handles POST /api/v1/report/vpat
+func (h *Handler) ReportVPAT(w http.ResponseWriter, r *http.Request) {
+	req, result, err := h.processReportRequest(w, r)
+	if err != nil {
+		return
+	}
+
+	compReport, err := scoring.BuildComplianceReport(result, "508", req.Meta)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to build compliance report", err.Error())
+		return
+	}
+
+	opts := report.VPATOptions{Edition: report.VPATEditionINT, Format: req.Format}
+	html, pdf, err := report.GenerateVPAT(compReport, opts)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to generate VPAT report", err.Error())
+		return
+	}
+
+	if req.Format == "pdf" {
+		w.Header().Set("Content-Type", "application/pdf")
+		w.Header().Set("Content-Disposition", `attachment; filename="vpat_report.pdf"`)
+		w.Write(pdf)
+	} else {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.Write([]byte(html))
+	}
+}
+
+// ReportEN301549 handles POST /api/v1/report/en301549
+func (h *Handler) ReportEN301549(w http.ResponseWriter, r *http.Request) {
+	req, result, err := h.processReportRequest(w, r)
+	if err != nil {
+		return
+	}
+
+	compReport, err := scoring.BuildComplianceReport(result, "EN301549", req.Meta)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to build compliance report", err.Error())
+		return
+	}
+
+	opts := report.EN301549Options{Format: req.Format}
+	html, pdf, err := report.GenerateEN301549(compReport, opts)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to generate EN 301 549 report", err.Error())
+		return
+	}
+
+	if req.Format == "pdf" {
+		w.Header().Set("Content-Type", "application/pdf")
+		w.Header().Set("Content-Disposition", `attachment; filename="en301549_report.pdf"`)
+		w.Write(pdf)
+	} else {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.Write([]byte(html))
+	}
+}
