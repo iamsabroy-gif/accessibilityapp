@@ -108,9 +108,9 @@ New test files:
 | File | Tests | Covers |
 |------|-------|--------|
 | [`score_test.go`](./internal/scoring/score_test.go) | 13 tests | Gaps 1, 2, 3, 4, 6, and review fixes (NotAutomatable) |
-| [`report_test.go`](./internal/report/report_test.go) | 12 tests/subtests | All 6 conformance states; all 9 formatters; Scope block unescaped HTML verification and script injection escaping |
+| [`report_test.go`](./internal/report/report_test.go) | 2 tests (11 subtests) | All 6 conformance states; all 9 formatters; Scope block unescaped HTML verification and script injection escaping |
 
-**All 26 new and updated tests pass.**
+**All tests in the scoring, report, and scanner packages pass cleanly (including 15 FSD-specific test functions and 11 report formatter smoke subtests).**
 
 ---
 

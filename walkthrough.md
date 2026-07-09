@@ -59,7 +59,7 @@ A total of **6 architectural gaps** and **1 critical bug** were closed:
 
 ## 3. Test Coverage
 
-A total of **26 new and updated unit/smoke tests** were added and validated:
+A total of 15 FSD-specific test functions and 11 report formatter smoke subtests were added and validated:
 
 ### Scoring Engine tests (`internal/scoring/score_test.go`)
 - `TestCalculate_CompliancePctIncludesIncomplete` (Denominators includes incomplete)

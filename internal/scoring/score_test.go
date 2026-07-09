@@ -224,7 +224,7 @@ func TestBuildComplianceReport_SCRegistryCount(t *testing.T) {
 func TestBuildComplianceReport_NotAutomatableWithRealRule(t *testing.T) {
 	t.Parallel()
 	result := minimalScanResult()
-	
+
 	// Add mock AudioEye breakdown data for 2.2.1:
 	result.AudioEye.SCBreakdown["2.2.1"] = models.SCScore{
 		FailedElements: 0,
@@ -283,4 +283,3 @@ func TestBuildComplianceReport_NotAutomatableNoRule(t *testing.T) {
 		t.Error("SC 1.2.5 not found in report rows")
 	}
 }
-

@@ -28,7 +28,7 @@ This document summarizes the resolution of outstanding blockages and defects ide
 - **Fix**: Added a check in `internal/scoring/score.go` to ensure a space is only added if `remarks` is non-empty.
 
 ### Tasks 5, 6, 7 — Documentation & Hygiene
-- Updated `fsd_implementation.md` and `walkthrough.md` to show the correct 15 NotAutomatable SCs, update test counts to 26, verify `go test ./...` results, and document the ADA report changes.
+- Updated `fsd_implementation.md` and `walkthrough.md` to show the correct 15 NotAutomatable SCs, verify `go test ./...` results (15 FSD-specific test functions, 11 smoke subtests), and document the ADA report changes.
 - Added a `RESOLVED` status banner to `implementation.md`.
 - Annotated `suggestion.md` with a reviewer's note detailing the Gap 6 escaping/ADA review gap.
 - Created three clean commits grouping scoring logic, report formatting, and living documentation files separately.
@@ -43,8 +43,9 @@ $ go build ./...
 (Exit code: 0)
 
 # Verify no format discrepancies
-$ gofmt -l ./...
-(Exit code: 0)
+# Note: The original walkthrough iteration 1 referenced the invalid command `gofmt -l ./...` which does not support package wildcards. This has been corrected to search recursively under the current directory.
+$ gofmt -l .
+(no output — clean)
 
 # Verify entire test suite is green
 $ go test ./...

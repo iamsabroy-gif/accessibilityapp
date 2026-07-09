@@ -180,7 +180,7 @@ Add a short reviewer's note at the top of `suggestion.md` stating that its "Gap 
 
 ```bash
 go build ./...                 # clean
-gofmt -l ./...                 # no output
+gofmt -l .                 # no output
 go test ./...                  # fully green — including internal/scanner
 cd scripts && npm test         # unchanged, green
 ```
