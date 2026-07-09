@@ -5,8 +5,8 @@ import "time"
 // ScanRequest is the payload for POST /api/v1/scan.
 type ScanRequest struct {
 	URL          string `json:"url"`
-	WCAGLevel    string `json:"wcag_level,omitempty"` // "AA" or "AAA"; defaults to server config
-	Depth        int    `json:"depth,omitempty"` // 0 (default) or 1, max 1
+	WCAGLevel    string `json:"wcag_level,omitempty"`    // "AA" or "AAA"; defaults to server config
+	Depth        int    `json:"depth,omitempty"`         // 0 (default) or 1, max 1
 	VisualReport bool   `json:"visual_report,omitempty"` // request visual HTML report
 }
 
@@ -41,6 +41,7 @@ type AudioEyeResult struct {
 	SCsEvaluated    int                `json:"scs_evaluated"`
 	WeightedFailure float64            `json:"weighted_failure"`
 	SiteScore       int                `json:"site_score,omitempty"`
+	Warning         string             `json:"warning,omitempty"` // non-empty when result is unreliable (e.g. 0 SCs evaluated)
 }
 
 // Node represents a specific DOM element that triggered a violation.
@@ -79,32 +80,32 @@ type Summary struct {
 	PassCount       int     `json:"passes"`
 	IncompleteCount int     `json:"incomplete"`
 	Level           string  `json:"wcag_level"`
-	Score           int     `json:"score"`            // 0–100, higher is better
-	Grade           string  `json:"grade"`            // A, B, C, D, or F
-	CompliancePct   float64 `json:"compliance_pct"`   // passes / (passes + violations) × 100
+	Score           int     `json:"score"`          // 0–100, higher is better
+	Grade           string  `json:"grade"`          // A, B, C, D, or F
+	CompliancePct   float64 `json:"compliance_pct"` // passes / (passes + violations) × 100
 	AudioEyeScore   int     `json:"audioeye_score"`
 }
 
 // ScanResult is the full response payload returned after a scan.
 type ScanResult struct {
-	URL        string      `json:"url"`
-	ScannedAt  time.Time   `json:"scanned_at"`
-	DurationMs int64       `json:"duration_ms"`
-	Summary    Summary     `json:"summary"`
-	Violations []Violation `json:"violations"`
-	Passes               []string         `json:"passes,omitempty"`
-	PassRules            []PassRule       `json:"pass_rules,omitempty"`
-	AudioEye             *AudioEyeResult  `json:"audioeye,omitempty"`
-	PassGuidelines       []string    `json:"passes_guidelines,omitempty"`
-	ViolationGuidelines  []string    `json:"violation_guidelines,omitempty"`
-	Incomplete           []string    `json:"incomplete,omitempty"`
-	IncompleteGuidelines []string    `json:"incomplete_guidelines,omitempty"`
-	EmbeddedResults      []ScanResult `json:"embedded_results,omitempty"`
-	DiscoveredLinks      []string     `json:"discovered_links,omitempty"`
-	PageHTML         string       `json:"page_html,omitempty"`
-	VisualReportPath string       `json:"visual_report_path,omitempty"`
-	VisualReportHTML string       `json:"visual_report_html,omitempty"` // full HTML report, returned when visual_report=true
-	Screenshot       string       `json:"screenshot,omitempty"`         // base64-encoded PNG of the scanned page
+	URL                  string          `json:"url"`
+	ScannedAt            time.Time       `json:"scanned_at"`
+	DurationMs           int64           `json:"duration_ms"`
+	Summary              Summary         `json:"summary"`
+	Violations           []Violation     `json:"violations"`
+	Passes               []string        `json:"passes,omitempty"`
+	PassRules            []PassRule      `json:"pass_rules,omitempty"`
+	AudioEye             *AudioEyeResult `json:"audioeye,omitempty"`
+	PassGuidelines       []string        `json:"passes_guidelines,omitempty"`
+	ViolationGuidelines  []string        `json:"violation_guidelines,omitempty"`
+	Incomplete           []string        `json:"incomplete,omitempty"`
+	IncompleteGuidelines []string        `json:"incomplete_guidelines,omitempty"`
+	EmbeddedResults      []ScanResult    `json:"embedded_results,omitempty"`
+	DiscoveredLinks      []string        `json:"discovered_links,omitempty"`
+	PageHTML             string          `json:"page_html,omitempty"`
+	VisualReportPath     string          `json:"visual_report_path,omitempty"`
+	VisualReportHTML     string          `json:"visual_report_html,omitempty"` // full HTML report, returned when visual_report=true
+	Screenshot           string          `json:"screenshot,omitempty"`         // base64-encoded PNG of the scanned page
 }
 
 // ErrorResponse is the standard error envelope.

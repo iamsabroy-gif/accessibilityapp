@@ -55,20 +55,23 @@ type ScoreReport struct {
 	AudioEyeDetail  *models.AudioEyeResult  `json:"audioeye_detail,omitempty"`
 }
 
-// Calculate computes an accessibility score (0–100), letter grade,
-// and compliance percentage from a list of violations and pass count.
+// Calculate computes an accessibility score (0-100), letter grade,
+// and compliance percentage from a list of violations, pass count, and incomplete count.
+//
+// incomplete is added to the denominator so that partially-tested pages
+// do not overstate their compliance percentage (Gap 3 fix).
 //
 // formula selects the scoring method:
 //
-//	"compliance" (default) — score = round(passCount / (passCount + violations) * 100)
+//	"compliance" (default) - score = round(passCount / (passCount + violations + incomplete) * 100)
 //	                          Score tracks the compliance % shown in the UI.
 //
-//	"penalty"              — score = max(0, 100 - Σ impactPenalty[impact])
+//	"penalty"              - score = max(0, 100 - sum impactPenalty[impact])
 //	                          Each critical violation costs 20 pts, serious 10 pts,
 //	                          moderate 5 pts, minor 2 pts.
-func Calculate(violations []models.Violation, passCount int, formula string) (score int, grade string, compliancePct float64) {
-	// Compliance % is always computed the same way regardless of formula.
-	total := passCount + len(violations)
+func Calculate(violations []models.Violation, passCount, incomplete int, formula string) (score int, grade string, compliancePct float64) {
+	// Compliance % denominator includes incomplete (Gap 3 fix).
+	total := passCount + len(violations) + incomplete
 	if total > 0 {
 		compliancePct = float64(passCount) / float64(total) * 100
 	}
@@ -225,7 +228,13 @@ func CalculateAudioEye(
 
 	n := len(scMap)
 	if n == 0 {
-		return models.AudioEyeResult{Score: 100, Grade: "A", SCsEvaluated: 0}
+		// Gap 4 fix: do not return a perfect score when nothing was evaluated.
+		return models.AudioEyeResult{
+			Score:        0,
+			Grade:        "F",
+			SCsEvaluated: 0,
+			Warning:      "No success criteria evaluated - result is not a compliance score.",
+		}
 	}
 
 	w := 1.0 / float64(n)
@@ -300,8 +309,18 @@ func letterGrade(score int) string {
 
 // conformanceLevelForSC maps SCScore data to a conformance level.
 // Pass hasRule=false if no rule in WCAGMap covers this SC.
-func conformanceLevelForSC(scID string, sc models.SCScore, hasRule bool) models.ConformanceLevel {
-	if !hasRule || sc.TestedElements == 0 {
+// Pass hasIncomplete=true if the SC has rules that returned incomplete results.
+func conformanceLevelForSC(scID string, sc models.SCScore, hasRule, hasIncomplete bool) models.ConformanceLevel {
+	_ = scID // unused but kept for potential future logging
+	if !hasRule {
+		return models.ConformanceNotEvaluated
+	}
+	// Rules ran and returned only incomplete (no element-level data yet).
+	if sc.TestedElements == 0 && hasIncomplete {
+		return models.ConformanceTestedInconclusive
+	}
+	// Rules exist but produced no tested elements and no incomplete.
+	if sc.TestedElements == 0 {
 		return models.ConformanceNotEvaluated
 	}
 	if sc.FailedElements == 0 {
@@ -342,7 +361,7 @@ func scIDLess(a, b string) bool {
 }
 
 // BuildComplianceReport constructs a ComplianceReport from a completed ScanResult.
-// standard must be "ADA", "508", or "EN301549".
+// standard must be "ADA", "508", "EN301549", "EAA", etc.
 // Runs CalculateAudioEye internally if result.AudioEye is nil.
 func BuildComplianceReport(
 	result *models.ScanResult,
@@ -363,25 +382,46 @@ func BuildComplianceReport(
 		}
 	}
 
+	// Build set of SCs associated with incomplete rule results.
+	// ScanResult.Incomplete holds rule IDs that returned incomplete axe results.
+	scHasIncomplete := map[string]bool{}
+	for _, ruleID := range result.Incomplete {
+		if scs, ok := models.WCAGMap[ruleID]; ok {
+			for _, sc := range scs {
+				scHasIncomplete[sc] = true
+			}
+		}
+	}
+
 	report := &models.ComplianceReport{
 		URL: result.URL, ScannedAt: result.ScannedAt,
 		Standard: standard, WCAGLevel: result.Summary.Level,
 		ReportDate: result.ScannedAt.Format("2006-01-02"), Meta: meta,
+		ScanWCAGLevel: result.Summary.Level,
+	}
+
+	// Propagate AudioEye warning when nothing was evaluated.
+	if ae.Warning != "" {
+		report.AudioEyeWarning = ae.Warning
 	}
 
 	for scID, scMeta := range models.SCRegistry {
-		// WCAG 2.2 excluded from all three main conformance tables.
-		if scMeta.WCAGVersion == "2.2" {
-			continue
-		}
-
-		// 508 only covers WCAG 2.0. WCAG 2.1-only SCs -> Not Applicable in 508 mode.
+		// 508 only covers WCAG 2.0. WCAG 2.1 and 2.2 SCs -> Not Applicable in 508 mode.
 		if standard == "508" && scMeta.WCAGVersion != "2.0" {
+			var remark string
+			switch scMeta.WCAGVersion {
+			case "2.1":
+				remark = "This criterion was introduced in WCAG 2.1. Section 508 (2017 refresh) references WCAG 2.0 and does not require this criterion."
+			case "2.2":
+				remark = "This criterion was introduced in WCAG 2.2. Section 508 (2017 refresh) references WCAG 2.0 and does not require this criterion."
+			default:
+				remark = "This criterion is not required by Section 508."
+			}
 			row := models.SCConformanceRow{
 				SCID: scID, SCName: scMeta.SCName, Level: scMeta.Level,
 				WCAGVersion: scMeta.WCAGVersion, EN301549Clause: scMeta.EN301549Clause,
 				Conformance: models.ConformanceNotApplicable,
-				Remarks:     "This criterion was introduced in WCAG 2.1. Section 508 (2017 refresh) references WCAG 2.0 and does not require this criterion.",
+				Remarks:     remark,
 			}
 			report.Rows = append(report.Rows, row)
 			report.NotApplCount++
@@ -390,15 +430,16 @@ func BuildComplianceReport(
 
 		scScore, hasSCData := ae.SCBreakdown[scID]
 		hasRule := scHasRule[scID]
+		hasIncomplete := scHasIncomplete[scID]
 
 		var conformance models.ConformanceLevel
 		var remarks string
 
-		if scMeta.NotAutomatable {
+		if scMeta.NotAutomatable && !hasRule {
 			conformance = models.ConformanceNotEvaluated
 			remarks = scMeta.LimitationNote
 		} else {
-			conformance = conformanceLevelForSC(scID, scScore, hasRule)
+			conformance = conformanceLevelForSC(scID, scScore, hasRule, hasIncomplete)
 			remarks = narrativeForConformance(scMeta, conformance)
 			if scMeta.LimitationNote != "" {
 				remarks += " " + scMeta.LimitationNote
@@ -420,6 +461,14 @@ func BuildComplianceReport(
 		}
 		report.Rows = append(report.Rows, row)
 
+		// Track extended metadata counts.
+		if scMeta.ManualTestingRequired {
+			report.ManualTestRequiredCount++
+		}
+		if hasSCData && scScore.TestedElements > 0 {
+			report.EvaluatedSCs++
+		}
+
 		switch conformance {
 		case models.ConformanceSupports:
 			report.SupportsCount++
@@ -431,6 +480,8 @@ func BuildComplianceReport(
 			report.NotEvalCount++
 		case models.ConformanceNotApplicable:
 			report.NotApplCount++
+		case models.ConformanceTestedInconclusive:
+			report.TestedInconclusiveCount++
 		}
 	}
 

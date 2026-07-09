@@ -146,7 +146,7 @@ var SuggestionMap = map[string]*DevSuggestion{
 			"This allows keyboard and AT users to skip directly to major page sections.",
 		},
 		CodeBefore: `<div class="sidebar">Related links</div>`,
-		CodeAfter: `<aside aria-label="Related links">Related links</aside>`,
+		CodeAfter:  `<aside aria-label="Related links">Related links</aside>`,
 	},
 	"list": {
 		Title:    "Use semantic list markup for groups of related items",
@@ -233,7 +233,7 @@ var SuggestionMap = map[string]*DevSuggestion{
 			"Apply CSS letter-spacing property to achieve the same visual effect.",
 		},
 		CodeBefore: `<h1>W E L C O M E</h1>`,
-		CodeAfter: `<h1 style="letter-spacing: 0.5em;">WELCOME</h1>`,
+		CodeAfter:  `<h1 style="letter-spacing: 0.5em;">WELCOME</h1>`,
 	},
 
 	// ── 1.3.3 Sensory Characteristics ───────────────────────────────────────
@@ -246,7 +246,7 @@ var SuggestionMap = map[string]*DevSuggestion{
 			"Example: instead of \"click the red button\", say \"click the Submit button (highlighted in red)\".",
 		},
 		CodeBefore: `<p>Click the round icon on the left to continue.</p>`,
-		CodeAfter: `<p>Click the <strong>Continue</strong> button (the circular arrow icon on the left).</p>`,
+		CodeAfter:  `<p>Click the <strong>Continue</strong> button (the circular arrow icon on the left).</p>`,
 	},
 
 	// ── 1.3.4 Orientation ───────────────────────────────────────────────────

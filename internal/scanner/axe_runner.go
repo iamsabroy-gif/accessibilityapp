@@ -12,19 +12,19 @@ import (
 	"github.com/webaccessibility/server/internal/scoring"
 
 	neturl "net/url"
-	"strings"
 	"sort"
+	"strings"
 )
 
 // axeRawResult mirrors the raw JSON output from axe_runner.js.
 type axeRawResult struct {
-	URL        string          `json:"url"`
-	Violations []axeViolation  `json:"violations"`
-	Passes     []axeRule       `json:"passes"`
-	Incomplete []axeRule       `json:"incomplete"`
-	Error      string          `json:"error,omitempty"`
-	Links      []string        `json:"links,omitempty"`
-	Screenshot string          `json:"screenshot,omitempty"`
+	URL        string         `json:"url"`
+	Violations []axeViolation `json:"violations"`
+	Passes     []axeRule      `json:"passes"`
+	Incomplete []axeRule      `json:"incomplete"`
+	Error      string         `json:"error,omitempty"`
+	Links      []string       `json:"links,omitempty"`
+	Screenshot string         `json:"screenshot,omitempty"`
 }
 
 type axeViolation struct {
@@ -39,10 +39,10 @@ type axeViolation struct {
 }
 
 type axeNode struct {
-	HTML           string    `json:"html"`
-	Target         []string  `json:"target"`
-	FailureSummary string    `json:"failureSummary"`
-	BBox           *axeBBox  `json:"bbox,omitempty"`
+	HTML           string   `json:"html"`
+	Target         []string `json:"target"`
+	FailureSummary string   `json:"failureSummary"`
+	BBox           *axeBBox `json:"bbox,omitempty"`
 }
 
 type axeBBox struct {
@@ -60,87 +60,89 @@ type axeRule struct {
 
 // AxeRunner implements Scanner using axe-core via a Node.js subprocess.
 type AxeRunner struct {
-    nodeBin          string
-    axeScriptPath    string
-    nativeScriptPath string
+	nodeBin          string
+	axeScriptPath    string
+	nativeScriptPath string
 }
 
 // NewAxeRunner creates a new AxeRunner with the given node binary and script paths.
 func NewAxeRunner(nodeBin, axeScriptPath, nativeScriptPath string) *AxeRunner {
-    return &AxeRunner{
-        nodeBin:          nodeBin,
-        axeScriptPath:    axeScriptPath,
-        nativeScriptPath: nativeScriptPath,
-    }
+	return &AxeRunner{
+		nodeBin:          nodeBin,
+		axeScriptPath:    axeScriptPath,
+		nativeScriptPath: nativeScriptPath,
+	}
 }
 
 // Scan runs axe-core against the given URL and returns a structured ScanResult.
 func (a *AxeRunner) Scan(ctx context.Context, url string, wcagLevel string, depth int) (*models.ScanResult, error) {
-    start := time.Now()
+	start := time.Now()
 
-    // Determine which script to run based on active engine config
-    scriptPath := a.axeScriptPath
-    if config.GetActiveEngine() == "native" {
-        scriptPath = a.nativeScriptPath
-    }
+	// Determine which script to run based on active engine config
+	scriptPath := a.axeScriptPath
+	if config.GetActiveEngine() == "native" {
+		scriptPath = a.nativeScriptPath
+	}
 
-    // Execute the node script with depth argument (passed for future use)
-    cmd := exec.CommandContext(ctx, a.nodeBin, scriptPath, url, wcagLevel)
-    output, err := cmd.CombinedOutput()
-    if err != nil {
-        // Try to parse JSON error from stdout (which may contain {"error":...})
-        var rawErr struct { Error string `json:"error"` }
-        if jsonErr := json.Unmarshal(output, &rawErr); jsonErr == nil && rawErr.Error != "" {
-            return nil, fmt.Errorf("axe runner error: %s", rawErr.Error)
-        }
-        if ctx.Err() == context.DeadlineExceeded {
-            return nil, fmt.Errorf("scan timed out for URL: %s", url)
-        }
-        // Fallback to whatever output we have (may include stderr/stdout)
-        return nil, fmt.Errorf("axe runner failed: %s", string(output))
-    }
+	// Execute the node script with depth argument (passed for future use)
+	cmd := exec.CommandContext(ctx, a.nodeBin, scriptPath, url, wcagLevel)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		// Try to parse JSON error from stdout (which may contain {"error":...})
+		var rawErr struct {
+			Error string `json:"error"`
+		}
+		if jsonErr := json.Unmarshal(output, &rawErr); jsonErr == nil && rawErr.Error != "" {
+			return nil, fmt.Errorf("axe runner error: %s", rawErr.Error)
+		}
+		if ctx.Err() == context.DeadlineExceeded {
+			return nil, fmt.Errorf("scan timed out for URL: %s", url)
+		}
+		// Fallback to whatever output we have (may include stderr/stdout)
+		return nil, fmt.Errorf("axe runner failed: %s", string(output))
+	}
 
-    var raw axeRawResult
-    if err := json.Unmarshal(output, &raw); err != nil {
-        return nil, fmt.Errorf("failed to parse axe output: %w", err)
-    }
-    if raw.Error != "" {
-        return nil, fmt.Errorf("axe scan error: %s", raw.Error)
-    }
+	var raw axeRawResult
+	if err := json.Unmarshal(output, &raw); err != nil {
+		return nil, fmt.Errorf("failed to parse axe output: %w", err)
+	}
+	if raw.Error != "" {
+		return nil, fmt.Errorf("axe scan error: %s", raw.Error)
+	}
 
-    // Map base result
-    result := mapToScanResult(raw, url, wcagLevel, time.Since(start).Milliseconds())
+	// Map base result
+	result := mapToScanResult(raw, url, wcagLevel, time.Since(start).Milliseconds())
 
-    // If depth == 1, return discovered links for frontend-driven parallel scanning
-    if depth == 1 && len(raw.Links) > 0 {
-        maxLinks := 10
-        validLinks := make([]string, 0, maxLinks)
-        for _, link := range raw.Links {
-            if len(validLinks) >= maxLinks {
-                break
-            }
-            u, err := neturl.Parse(link)
-            if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
-                continue
-            }
-            lower := strings.ToLower(link)
-            blocked := []string{"localhost", "127.", "10.", "192.168.", "172.16.", "0.0.0.0", "::1"}
-            blockedFlag := false
-            for _, b := range blocked {
-                if strings.Contains(lower, b) {
-                    blockedFlag = true
-                    break
-                }
-            }
-            if blockedFlag && !config.GetAllowPrivateScans() {
-                continue
-            }
-            validLinks = append(validLinks, link)
-        }
-        result.DiscoveredLinks = validLinks
-    }
+	// If depth == 1, return discovered links for frontend-driven parallel scanning
+	if depth == 1 && len(raw.Links) > 0 {
+		maxLinks := 10
+		validLinks := make([]string, 0, maxLinks)
+		for _, link := range raw.Links {
+			if len(validLinks) >= maxLinks {
+				break
+			}
+			u, err := neturl.Parse(link)
+			if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+				continue
+			}
+			lower := strings.ToLower(link)
+			blocked := []string{"localhost", "127.", "10.", "192.168.", "172.16.", "0.0.0.0", "::1"}
+			blockedFlag := false
+			for _, b := range blocked {
+				if strings.Contains(lower, b) {
+					blockedFlag = true
+					break
+				}
+			}
+			if blockedFlag && !config.GetAllowPrivateScans() {
+				continue
+			}
+			validLinks = append(validLinks, link)
+		}
+		result.DiscoveredLinks = validLinks
+	}
 
-    return result, nil
+	return result, nil
 
 }
 
@@ -212,7 +214,7 @@ func mapToScanResult(raw axeRawResult, url, wcagLevel string, durationMs int64) 
 		incompleteIDs = append(incompleteIDs, i.ID)
 	}
 
-	score, grade, compliancePct := scoring.Calculate(violations, len(passIDs), config.GetScoringFormula())
+	score, grade, compliancePct := scoring.Calculate(violations, len(passIDs), len(incompleteIDs), config.GetScoringFormula())
 
 	// Build guideline slices
 	passGuidelines := mapGuidelines(passIDs)
@@ -237,12 +239,12 @@ func mapToScanResult(raw axeRawResult, url, wcagLevel string, durationMs int64) 
 			Grade:           grade,
 			CompliancePct:   compliancePct,
 		},
-		Violations:  violations,
-		Passes:      passIDs,
-		PassRules:   passRules,
-		Incomplete:  incompleteIDs,
+		Violations:      violations,
+		Passes:          passIDs,
+		PassRules:       passRules,
+		Incomplete:      incompleteIDs,
 		EmbeddedResults: nil,
-		Screenshot:  raw.Screenshot,
+		Screenshot:      raw.Screenshot,
 	}
 
 	// Compute AudioEye element-level failure-rate score

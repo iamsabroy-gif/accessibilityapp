@@ -438,7 +438,7 @@ func (h *Handler) processReportRequest(w http.ResponseWriter, r *http.Request) (
 	defer cancel()
 
 	h.Logger.Info("starting scan for compliance report", zap.String("url", req.URL))
-	result, err := h.Scanner.Scan(ctx, req.URL, "AAA", req.Depth)
+	result, err := h.Scanner.Scan(ctx, req.URL, config.GetWCAGLevel(), req.Depth)
 	if err != nil {
 		h.Logger.Error("scan failed", zap.String("url", req.URL), zap.Error(err))
 		writeError(w, http.StatusInternalServerError, "scan failed", err.Error())

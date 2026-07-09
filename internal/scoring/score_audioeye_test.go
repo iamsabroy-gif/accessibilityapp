@@ -29,10 +29,10 @@ func TestCalculateAudioEye_WorkedExample(t *testing.T) {
 	}
 
 	wcagMap := map[string][]string{
-		"image-alt":       {"1.1.1"},
-		"color-contrast":  {"1.4.3"},
-		"document-title":  {"2.4.2"},
-		"html-has-lang":   {"3.1.1"},
+		"image-alt":      {"1.1.1"},
+		"color-contrast": {"1.4.3"},
+		"document-title": {"2.4.2"},
+		"html-has-lang":  {"3.1.1"},
 	}
 
 	result := CalculateAudioEye(violations, passRules, wcagMap)
@@ -79,8 +79,18 @@ func TestCalculateAudioEye_NoViolations(t *testing.T) {
 
 func TestCalculateAudioEye_Empty(t *testing.T) {
 	result := CalculateAudioEye(nil, nil, map[string][]string{})
-	if result.Score != 100 || result.SCsEvaluated != 0 {
-		t.Errorf("expected Score=100, SCsEvaluated=0 for empty input, got %d, %d", result.Score, result.SCsEvaluated)
+	// Gap 4 fix: zero SCs evaluated must return Score=0, Grade=F, and a Warning.
+	if result.Score != 0 {
+		t.Errorf("expected Score=0 for empty input (zero SCs evaluated), got %d", result.Score)
+	}
+	if result.Grade != "F" {
+		t.Errorf("expected Grade=F for empty input, got %s", result.Grade)
+	}
+	if result.Warning == "" {
+		t.Error("expected non-empty Warning for empty input")
+	}
+	if result.SCsEvaluated != 0 {
+		t.Errorf("expected SCsEvaluated=0, got %d", result.SCsEvaluated)
 	}
 }
 
