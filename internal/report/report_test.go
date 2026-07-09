@@ -101,6 +101,28 @@ func TestReportFormatters_AllSmoke(t *testing.T) {
 			html, _, err := GenerateUKEquality(cr, UKOptions{})
 			return html, err
 		}},
+		{"ADA", func() (string, error) {
+			result := &models.ScanResult{
+				URL:       "https://example.com",
+				ScannedAt: time.Now(),
+				Summary: models.Summary{
+					Score: 85,
+					Grade: "B",
+				},
+				Violations: []models.Violation{
+					{ID: "color-contrast", Impact: "serious", Nodes: make([]models.Node, 2)},
+				},
+			}
+			opts := ADAOptions{
+				Format:           "html",
+				ComplianceReport: cr,
+			}
+			rep, err := GenerateADA(result, opts)
+			if err != nil {
+				return "", err
+			}
+			return rep.HTML, nil
+		}},
 	}
 
 	for _, tc := range tests {
@@ -125,6 +147,13 @@ func TestReportFormatters_AllSmoke(t *testing.T) {
 			if !strings.Contains(html, "Tested") && !strings.Contains(html, "tested-inconclusive") {
 				t.Errorf("%s: Tested – Inconclusive state not rendered", tc.name)
 			}
+			// Assert unescaped HTML output
+			if !strings.Contains(html, `<div class="scope-block">`) {
+				t.Errorf("%s: scope block was HTML-escaped instead of rendered (missing unescaped markup)", tc.name)
+			}
+			if strings.Contains(html, `&lt;div class=`) {
+				t.Errorf("%s: found escaped scope-block markup in output", tc.name)
+			}
 		})
 	}
 }
@@ -132,7 +161,7 @@ func TestReportFormatters_AllSmoke(t *testing.T) {
 // TestScopeBlockHTML verifies the scope block renders key fields.
 func TestScopeBlockHTML(t *testing.T) {
 	cr := fixtureComplianceReport()
-	block := ScopeBlockHTML(cr)
+	block := string(ScopeBlockHTML(cr))
 	if !strings.Contains(block, "Scope") {
 		t.Error("ScopeBlockHTML: missing 'Scope' heading")
 	}
@@ -141,5 +170,15 @@ func TestScopeBlockHTML(t *testing.T) {
 	}
 	if !strings.Contains(block, "audioeye-warning") {
 		t.Error("ScopeBlockHTML: missing audioeye-warning for non-empty AudioEyeWarning")
+	}
+
+	// Injection test: set cr.AudioEyeWarning to a script tag and assert it is escaped
+	cr.AudioEyeWarning = "<script>alert(1)</script>"
+	blockEscaped := string(ScopeBlockHTML(cr))
+	if strings.Contains(blockEscaped, "<script>") {
+		t.Error("ScopeBlockHTML: failed to escape AudioEyeWarning HTML content")
+	}
+	if !strings.Contains(blockEscaped, "&lt;script&gt;") {
+		t.Error("ScopeBlockHTML: expected HTML-escaped script tags in AudioEyeWarning")
 	}
 }

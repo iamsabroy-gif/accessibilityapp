@@ -2,6 +2,7 @@ package report
 
 import (
 	"fmt"
+	"html/template"
 
 	"github.com/webaccessibility/server/internal/models"
 )
@@ -35,10 +36,11 @@ const scopeLimitationsCSS = `
         .audioeye-warning { background: #fef3c7; border: 1px solid #fcd34d; border-radius: 4px; padding: 8px 12px; margin-top: 10px; font-size: 0.9em; color: #92400e; }`
 
 // ScopeBlockHTML renders an HTML "Scope & Limitations" block from a ComplianceReport.
-func ScopeBlockHTML(cr *models.ComplianceReport) string {
+func ScopeBlockHTML(cr *models.ComplianceReport) template.HTML {
 	warning := ""
 	if cr.AudioEyeWarning != "" {
-		warning = fmt.Sprintf(`<div class="audioeye-warning"><strong>⚠ AudioEye Warning:</strong> %s</div>`, cr.AudioEyeWarning)
+		warning = fmt.Sprintf(`<div class="audioeye-warning"><strong>⚠ AudioEye Warning:</strong> %s</div>`,
+			template.HTMLEscapeString(cr.AudioEyeWarning))
 	}
 	scanLevel := cr.ScanWCAGLevel
 	if scanLevel == "" {
@@ -47,7 +49,7 @@ func ScopeBlockHTML(cr *models.ComplianceReport) string {
 	if scanLevel == "" {
 		scanLevel = "AA"
 	}
-	return fmt.Sprintf(`
+	return template.HTML(fmt.Sprintf(`
     <div class="scope-block">
         <h3>Scope &amp; Limitations</h3>
         <table>
@@ -62,10 +64,10 @@ func ScopeBlockHTML(cr *models.ComplianceReport) string {
             results; these rows are distinct from <em>Not Evaluated</em> (no automation exists).
         </p>
     </div>`,
-		scanLevel,
+		template.HTMLEscapeString(scanLevel),
 		cr.TotalSCs,
 		cr.EvaluatedSCs,
 		cr.ManualTestRequiredCount,
 		warning,
-	)
+	))
 }

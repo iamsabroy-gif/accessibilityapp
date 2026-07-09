@@ -12,8 +12,9 @@ import (
 )
 
 type ADAOptions struct {
-	Format string // "html" (default) | "pdf"
-	Meta   models.ReportMeta
+	Format           string // "html" (default) | "pdf"
+	Meta             models.ReportMeta
+	ComplianceReport *models.ComplianceReport
 }
 
 type ADABarrier struct {
@@ -62,6 +63,13 @@ func GenerateADA(result *models.ScanResult, opts ADAOptions) (*ADAReport, error)
         .impact-minor { background: #e0f2fe; color: #075985; }
         details { margin-bottom: 15px; border: 1px solid #ddd; padding: 10px; border-radius: 4px; }
         summary { font-weight: bold; cursor: pointer; }
+        .tested-inconclusive { color: #7c3aed; font-weight: bold; }
+        .scope-block { border: 1px solid #bfdbfe; background: #eff6ff; border-radius: 6px; padding: 16px 20px; margin: 24px 0; }
+        .scope-block h3 { margin: 0 0 10px; color: #1e40af; font-size: 1rem; }
+        .scope-block table { border: none; margin: 0; }
+        .scope-block td, .scope-block th { border: 1px solid #dbeafe; padding: 6px 10px; font-size: 0.9em; }
+        .scope-block th { background: #dbeafe; font-weight: bold; }
+        .audioeye-warning { background: #fef3c7; border: 1px solid #fcd34d; border-radius: 4px; padding: 8px 12px; margin-top: 10px; font-size: 0.9em; color: #92400e; }
     </style>
 </head>
 <body>
@@ -126,6 +134,8 @@ func GenerateADA(result *models.ScanResult, opts ADAOptions) (*ADAReport, error)
     </table>
     {{end}}
 
+    {{.ScopeBlock}}
+
     <div class="disclaimer">
         <h3>Scope Disclosure & Legal Disclaimer</h3>
         <p>This assessment covers {{.Result.URL}} scanned at {{.Result.ScannedAt.Format "2006-01-02 15:04:05"}}. Compliance of untested pages, dynamic content loaded after interaction, and pages behind authentication is not represented.</p>
@@ -142,6 +152,11 @@ func GenerateADA(result *models.ScanResult, opts ADAOptions) (*ADAReport, error)
 		return nil, fmt.Errorf("failed to parse ADA template: %v", err)
 	}
 
+	var scopeBlock template.HTML
+	if opts.ComplianceReport != nil {
+		scopeBlock = ScopeBlockHTML(opts.ComplianceReport)
+	}
+
 	var buf bytes.Buffer
 	err = tmpl.Execute(&buf, map[string]interface{}{
 		"Result":       result,
@@ -149,6 +164,7 @@ func GenerateADA(result *models.ScanResult, opts ADAOptions) (*ADAReport, error)
 		"BestPractice": bestPractice,
 		"RiskBanner":   riskBanner,
 		"Now":          time.Now(),
+		"ScopeBlock":   scopeBlock,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to execute ADA template: %v", err)
