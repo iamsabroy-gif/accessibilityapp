@@ -45,6 +45,13 @@ func GenerateVPAT(cr *models.ComplianceReport, opts VPATOptions) (string, []byte
         .partial { color: #856404; font-weight: bold; }
         .does-not-support { color: #721c24; font-weight: bold; }
         .not-eval { color: #6c757d; }
+        .tested-inconclusive { color: #7c3aed; font-weight: bold; }
+        .scope-block { border: 1px solid #bfdbfe; background: #eff6ff; border-radius: 6px; padding: 16px 20px; margin: 24px 0; }
+        .scope-block h3 { margin: 0 0 10px; color: #1e40af; font-size: 1rem; }
+        .scope-block table { border: none; margin: 0; }
+        .scope-block td, .scope-block th { border: 1px solid #dbeafe; padding: 6px 10px; font-size: 0.9em; }
+        .scope-block th { background: #dbeafe; font-weight: bold; }
+        .audioeye-warning { background: #fef3c7; border: 1px solid #fcd34d; border-radius: 4px; padding: 8px 12px; margin-top: 10px; font-size: 0.9em; color: #92400e; }
     </style>
 </head>
 <body>
@@ -81,6 +88,7 @@ func GenerateVPAT(cr *models.ComplianceReport, opts VPATOptions) (string, []byte
         </tr>
         {{end}}
     </table>
+    {{.ScopeBlock}}
 
     <h2>Chapter 3: Functional Performance Criteria (FPC)</h2>
     <table>
@@ -122,18 +130,7 @@ func GenerateVPAT(cr *models.ComplianceReport, opts VPATOptions) (string, []byte
 </html>`
 
 	tmpl, err := template.New("vpat").Funcs(template.FuncMap{
-		"conformanceClass": func(c models.ConformanceLevel) string {
-			switch c {
-			case models.ConformanceSupports:
-				return "supports"
-			case models.ConformancePartiallySupports:
-				return "partial"
-			case models.ConformanceDoesNotSupport:
-				return "does-not-support"
-			default:
-				return "not-eval"
-			}
-		},
+		"conformanceClass": conformanceClass,
 	}).Parse(tmplStr)
 	if err != nil {
 		return "", nil, fmt.Errorf("failed to parse VPAT template: %v", err)
@@ -141,11 +138,12 @@ func GenerateVPAT(cr *models.ComplianceReport, opts VPATOptions) (string, []byte
 
 	var buf bytes.Buffer
 	err = tmpl.Execute(&buf, map[string]interface{}{
-		"Report":   cr,
-		"Edition":  opts.Edition,
-		"Chapter3": VPAT508Chapter3Rows,
-		"Chapter4": VPAT508Chapter4Rows,
-		"Chapter6": VPAT508Chapter6Rows,
+		"Report":     cr,
+		"Edition":    opts.Edition,
+		"Chapter3":   VPAT508Chapter3Rows,
+		"Chapter4":   VPAT508Chapter4Rows,
+		"Chapter6":   VPAT508Chapter6Rows,
+		"ScopeBlock": ScopeBlockHTML(cr),
 	})
 	if err != nil {
 		return "", nil, fmt.Errorf("failed to execute VPAT template: %v", err)

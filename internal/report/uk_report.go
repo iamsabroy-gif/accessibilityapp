@@ -36,6 +36,13 @@ func GenerateUKEquality(cr *models.ComplianceReport, opts UKOptions) (string, []
         .partial { color: #f47738; font-weight: bold; }
         .does-not-support { color: #d4351c; font-weight: bold; }
         .not-eval { color: #505a5f; }
+        .tested-inconclusive { color: #7c3aed; font-weight: bold; }
+        .scope-block { border: 1px solid #bfdbfe; background: #eff6ff; border-radius: 6px; padding: 16px 20px; margin: 24px 0; }
+        .scope-block h3 { margin: 0 0 10px; color: #1e40af; font-size: 1rem; }
+        .scope-block table { border: none; margin: 0; }
+        .scope-block td, .scope-block th { border: 1px solid #dbeafe; padding: 6px 10px; font-size: 0.9em; }
+        .scope-block th { background: #dbeafe; font-weight: bold; }
+        .audioeye-warning { background: #fef3c7; border: 1px solid #fcd34d; border-radius: 4px; padding: 8px 12px; margin-top: 10px; font-size: 0.9em; color: #92400e; }
     </style>
 </head>
 <body>
@@ -79,6 +86,7 @@ func GenerateUKEquality(cr *models.ComplianceReport, opts UKOptions) (string, []
         {{end}}
     </table>
 
+    {{.ScopeBlock}}
     {{if eq .Report.FailCount 0}}
     <p>No critical or serious non-compliances were identified in the automated scan.</p>
     {{end}}
@@ -102,18 +110,7 @@ func GenerateUKEquality(cr *models.ComplianceReport, opts UKOptions) (string, []
 </html>`
 
 	tmpl, err := template.New("uk").Funcs(template.FuncMap{
-		"conformanceClass": func(c models.ConformanceLevel) string {
-			switch c {
-			case models.ConformanceSupports:
-				return "supports"
-			case models.ConformancePartiallySupports:
-				return "partial"
-			case models.ConformanceDoesNotSupport:
-				return "does-not-support"
-			default:
-				return "not-eval"
-			}
-		},
+		"conformanceClass": conformanceClass,
 	}).Parse(tmplStr)
 	if err != nil {
 		return "", nil, fmt.Errorf("failed to parse UK Equality template: %v", err)
@@ -121,7 +118,8 @@ func GenerateUKEquality(cr *models.ComplianceReport, opts UKOptions) (string, []
 
 	var buf bytes.Buffer
 	err = tmpl.Execute(&buf, map[string]interface{}{
-		"Report": cr,
+		"Report":     cr,
+		"ScopeBlock": ScopeBlockHTML(cr),
 	})
 	if err != nil {
 		return "", nil, fmt.Errorf("failed to execute UK Equality template: %v", err)
