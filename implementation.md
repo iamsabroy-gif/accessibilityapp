@@ -1,5 +1,9 @@
 # Implementation Task — Fix NotAutomatable Short-Circuit Bug
 
+> **STATUS: RESOLVED (2026-07-10)** — implemented in internal/scoring/score.go:438
+> (`NotAutomatable && !hasRule` gate); verified by score_test.go conformance tests.
+> Superseded by implementation_iteration1.md. Kept for historical context.
+
 **Status**: Ready for implementation
 **Audience**: Antigravity IDE model-based coding agent
 **Reference**: [`fsd.md`](./fsd.md) · [`fsd_implementation.md`](./fsd_implementation.md)
