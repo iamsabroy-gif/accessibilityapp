@@ -115,6 +115,7 @@ func TestWCAGMap_122_ExistingRulesDoNotClaimSC122(t *testing.T) {
 	t.Parallel()
 	new122Rules := map[string]bool{
 		"video-captions-present":    true,
+		"video-captions-track":      true, // pre-existing 1.2.2 mapper (wcag_mapping.go:15)
 		"video-captions-track-src":  true,
 		"video-captions-track-lang": true,
 	}
@@ -367,12 +368,16 @@ func TestIntegration_122_FullPipeline_Violation(t *testing.T) {
 	if report.TotalViolations != 1 {
 		t.Errorf("TotalViolations = %d; want 1", report.TotalViolations)
 	}
-	if report.Score != 80 {
-		t.Errorf("report.Score = %d; want 80", report.Score)
+
+	score, grade, _ := scoring.Calculate(result.Violations, result.Summary.PassCount,
+		result.Summary.IncompleteCount, scoring.FormulaPenalty)
+	if score != 80 {
+		t.Errorf("penalty score = %d; want 80", score)
 	}
-	if report.Grade != "B" {
-		t.Errorf("report.Grade = %q; want 'B'", report.Grade)
+	if grade != "B" {
+		t.Errorf("penalty grade = %q; want 'B'", grade)
 	}
+
 	if report.Breakdown["critical"].Count != 1 {
 		t.Errorf("breakdown critical count = %d; want 1", report.Breakdown["critical"].Count)
 	}

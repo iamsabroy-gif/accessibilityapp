@@ -442,7 +442,10 @@ func BuildComplianceReport(
 			conformance = conformanceLevelForSC(scID, scScore, hasRule, hasIncomplete)
 			remarks = narrativeForConformance(scMeta, conformance)
 			if scMeta.LimitationNote != "" {
-				remarks += " " + scMeta.LimitationNote
+				if remarks != "" {
+					remarks += " "
+				}
+				remarks += scMeta.LimitationNote
 			}
 		}
 

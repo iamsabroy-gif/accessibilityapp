@@ -455,7 +455,17 @@ func (h *Handler) ReportADA(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	opts := report.ADAOptions{Format: req.Format, Meta: req.Meta}
+	compReport, err := scoring.BuildComplianceReport(result, "ADA", req.Meta)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to build compliance report", err.Error())
+		return
+	}
+
+	opts := report.ADAOptions{
+		Format:           req.Format,
+		Meta:             req.Meta,
+		ComplianceReport: compReport,
+	}
 	ada, err := report.GenerateADA(result, opts)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to generate ADA report", err.Error())
