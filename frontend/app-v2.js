@@ -39,17 +39,11 @@ const state = {
 const $ = (id) => document.getElementById(id);
 
 // ─── Utility ──────────────────────────────────────────────────
-function isLocalHost() {
-  const host = window.location.hostname;
-  const proto = window.location.protocol;
-  return host === 'localhost' || host === '127.0.0.1' || host.startsWith('192.168.') || proto === 'file:';
-}
-
 function apiBase() {
-  if (isLocalHost()) {
-    return window.location.hostname ? window.location.origin : 'http://localhost:8080';
+  if (window.location.protocol === 'file:') {
+    return DEFAULT_API_BASE;
   }
-  return DEFAULT_API_BASE;
+  return window.location.origin;
 }
 
 function getScanMode() {
