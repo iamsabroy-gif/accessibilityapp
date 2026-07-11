@@ -1,0 +1,3 @@
+accessscan.in, www.accessscan.in {
+	reverse_proxy webaccessibility:8080
+}
