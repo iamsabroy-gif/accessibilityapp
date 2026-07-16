@@ -2054,6 +2054,11 @@ async function loadAdminSettings() {
     const engine = data.active_engine || 'axe';
     $('engine-axe')?.classList.toggle('active', engine === 'axe');
     $('engine-native')?.classList.toggle('active', engine === 'native');
+
+    // Reflect PDF scanning visibility toggle
+    const pdfVisible = data.pdf_scanning_visible === true;
+    $('pdf-visible-on')?.classList.toggle('active', pdfVisible);
+    $('pdf-visible-off')?.classList.toggle('active', !pdfVisible);
   } catch (err) {
     console.error('Failed to load settings', err);
   }
@@ -2067,6 +2072,11 @@ function toggleScoringFormula(formula) {
 function toggleActiveEngine(engine) {
   $('engine-axe')?.classList.toggle('active', engine === 'axe');
   $('engine-native')?.classList.toggle('active', engine === 'native');
+}
+
+function togglePDFVisibility(visible) {
+  $('pdf-visible-on')?.classList.toggle('active', visible);
+  $('pdf-visible-off')?.classList.toggle('active', !visible);
 }
 
 function updateScanModeToggle() {
@@ -2096,6 +2106,7 @@ async function saveAllSettings() {
 
   const formula = $('score-formula-penalty')?.classList.contains('active') ? 'penalty' : 'compliance';
   const engine = $('engine-native')?.classList.contains('active') ? 'native' : 'axe';
+  const pdfVisible = $('pdf-visible-on')?.classList.contains('active') === true;
 
   btn.disabled = true;
   status.textContent = 'Saving settings...';
@@ -2111,11 +2122,18 @@ async function saveAllSettings() {
       body: JSON.stringify({
         max_concurrent_scans: maxConcurrent,
         scoring_formula: formula,
-        active_engine: engine
+        active_engine: engine,
+        pdf_scanning_visible: pdfVisible
       })
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || 'Failed to save settings');
+    // Sync the PDF coming-soon card in the main UI immediately after save
+    const card = $('pdf-coming-soon');
+    if (card) {
+      card.hidden = !pdfVisible;
+      card.setAttribute('aria-hidden', pdfVisible ? 'false' : 'true');
+    }
     status.textContent = 'All settings saved successfully!';
     status.className = 'upload-status success';
     setTimeout(() => { if (status.textContent === 'All settings saved successfully!') status.textContent = ''; }, 3000);
@@ -2256,6 +2274,8 @@ document.addEventListener('DOMContentLoaded', () => {
   $('score-formula-penalty')?.addEventListener('click', () => toggleScoringFormula('penalty'));
   $('engine-axe')?.addEventListener('click', () => toggleActiveEngine('axe'));
   $('engine-native')?.addEventListener('click', () => toggleActiveEngine('native'));
+  $('pdf-visible-off')?.addEventListener('click', () => togglePDFVisibility(false));
+  $('pdf-visible-on')?.addEventListener('click', () => togglePDFVisibility(true));
   $('admin-save-all')?.addEventListener('click', saveAllSettings);
 
   $('coverage-upload-btn')?.addEventListener('click', uploadCoverageReport);
@@ -2286,6 +2306,19 @@ document.addEventListener('DOMContentLoaded', () => {
   ensureToken().then(ok => {
     if (ok) scheduleTokenRenewal();
   });
+
+  // Drive the PDF coming-soon card visibility from the public Info endpoint.
+  // No auth required — pdf_scanning_visible is intentionally unauthenticated
+  // (same precedent as max_concurrent_scans). Only controls UI copy, not access.
+  fetch(`${apiBase()}/api/v1/`).then(r => r.ok ? r.json() : null).then(info => {
+    if (!info) return;
+    const card = $('pdf-coming-soon');
+    if (card) {
+      const show = info.pdf_scanning_visible === true;
+      card.hidden = !show;
+      card.setAttribute('aria-hidden', show ? 'false' : 'true');
+    }
+  }).catch(() => { /* non-critical */ });
 });
 
 

@@ -25,8 +25,13 @@ type Config struct {
 	// ScoringFormula controls how the 0-100 score is computed.
 	// "compliance" (default) = round(passCount / total * 100)
 	// "penalty"              = max(0, 100 - Σ impactPenalty)
-	ScoringFormula string
-	ActiveEngine   string // "axe" or "native"
+	ScoringFormula     string
+	ActiveEngine       string // "axe" or "native"
+	// PDFScanningVisible controls whether the "PDF scanning — coming soon" UI card
+	// is revealed in the main app. This is a UI-visibility flag ONLY — it must
+	// NEVER be used to gate actual PDF scan processing (use PDFScanningEnabled
+	// for that when Phase 1 is greenlit).
+	PDFScanningVisible bool
 }
 
 // global holds the runtime configuration and is accessed concurrently.
@@ -149,6 +154,28 @@ func SetActiveEngine(e string) {
 	global.ActiveEngine = e
 }
 
+// GetPDFScanningVisible returns whether the PDF scanning coming-soon UI card is visible.
+// UI-only flag — MUST NOT be used to gate actual PDF scan processing.
+func GetPDFScanningVisible() bool {
+	mu.RLock()
+	defer mu.RUnlock()
+	if global == nil {
+		return false
+	}
+	return global.PDFScanningVisible
+}
+
+// SetPDFScanningVisible toggles the PDF scanning UI visibility at runtime.
+// UI-only flag — MUST NOT be used to gate actual PDF scan processing.
+func SetPDFScanningVisible(v bool) {
+	mu.Lock()
+	defer mu.Unlock()
+	if global == nil {
+		global = &Config{}
+	}
+	global.PDFScanningVisible = v
+}
+
 // SetSecret updates the JWT secret at runtime.
 func SetSecret(newSecret string) {
 	mu.Lock()
@@ -192,9 +219,10 @@ func Load() *Config {
 		NodeBin:            getEnv("NODE_BIN", "node"),
 		AxeRunnerScript:    getEnv("AXE_RUNNER_SCRIPT", "scripts/axe_runner.js"),
 		NativeRunnerScript: getEnv("NATIVE_RUNNER_SCRIPT", "scripts/native_runner.js"),
-		AllowPrivateScans:  getEnvBool("ALLOW_PRIVATE_SCANS", false),
-		ScoringFormula:     formula,
-		ActiveEngine:       getEnv("ACTIVE_ENGINE", "native"),
+		AllowPrivateScans:   getEnvBool("ALLOW_PRIVATE_SCANS", false),
+		ScoringFormula:      formula,
+		ActiveEngine:        getEnv("ACTIVE_ENGINE", "native"),
+		PDFScanningVisible:  getEnvBool("PDF_SCANNING_VISIBLE", false),
 	}
 }
 

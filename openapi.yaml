@@ -1006,6 +1006,15 @@ components:
         description:
           type: string
           example: "WCAG accessibility scanning API powered by axe-core"
+        max_concurrent_scans:
+          type: integer
+          example: 5
+        pdf_scanning_visible:
+          type: boolean
+          description: |
+            Whether the \"PDF scanning — coming soon\" UI card is visible.
+            UI-only flag; has no bearing on any backend PDF processing capability.
+          example: false
         endpoints:
           type: array
           items:

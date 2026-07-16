@@ -41,10 +41,11 @@ func (h *Handler) Health(w http.ResponseWriter, r *http.Request) {
 // Info handles GET /api/v1/
 func (h *Handler) Info(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"name":                 "Web Accessibility API",
-		"version":              "1.0.0",
-		"description":          "WCAG accessibility scanning API powered by axe-core",
+		"name":                  "Web Accessibility API",
+		"version":               "1.0.0",
+		"description":           "WCAG accessibility scanning API powered by axe-core",
 		"max_concurrent_scans": config.GetMaxConcurrentScans(),
+		"pdf_scanning_visible": config.GetPDFScanningVisible(),
 		"endpoints":            []string{"POST /api/v1/scan", "POST /api/v1/score", "GET  /api/v1/health", "GET  /api/v1/", "POST /api/v1/token", "POST /api/v1/secret", "GET  /api/v1/secret"},
 	})
 }
@@ -276,6 +277,7 @@ func (h *Handler) GetSettings(w http.ResponseWriter, r *http.Request) {
 		"max_concurrent_scans": config.GetMaxConcurrentScans(),
 		"scoring_formula":      config.GetScoringFormula(),
 		"active_engine":        config.GetActiveEngine(),
+		"pdf_scanning_visible": config.GetPDFScanningVisible(),
 	})
 }
 
@@ -285,6 +287,9 @@ func (h *Handler) UpdateSettings(w http.ResponseWriter, r *http.Request) {
 		MaxConcurrentScans int    `json:"max_concurrent_scans"`
 		ScoringFormula     string `json:"scoring_formula"`
 		ActiveEngine       string `json:"active_engine"`
+		// PDFScanningVisible uses *bool so an explicit false is distinguishable from omitted.
+		// WARNING: This flag is UI-only. Do NOT use it to gate actual PDF scan processing.
+		PDFScanningVisible *bool `json:"pdf_scanning_visible"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body", err.Error())
@@ -302,10 +307,15 @@ func (h *Handler) UpdateSettings(w http.ResponseWriter, r *http.Request) {
 		config.SetActiveEngine(req.ActiveEngine)
 		h.Logger.Info("active_engine updated via API", zap.String("active_engine", req.ActiveEngine))
 	}
+	if req.PDFScanningVisible != nil {
+		config.SetPDFScanningVisible(*req.PDFScanningVisible)
+		h.Logger.Info("pdf_scanning_visible updated via API", zap.Bool("pdf_scanning_visible", *req.PDFScanningVisible))
+	}
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"max_concurrent_scans": config.GetMaxConcurrentScans(),
 		"scoring_formula":      config.GetScoringFormula(),
 		"active_engine":        config.GetActiveEngine(),
+		"pdf_scanning_visible": config.GetPDFScanningVisible(),
 	})
 }
 

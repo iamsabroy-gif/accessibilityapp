@@ -174,6 +174,18 @@
           </div>
         </form>
 
+        <!-- PDF scanning coming-soon card: server-driven visibility (pdf_scanning_visible from GET /api/v1/) -->
+        <div id="pdf-coming-soon" hidden aria-hidden="true" style="margin-top: 2rem; padding: 1.25rem 1.5rem; background: linear-gradient(135deg, rgba(99,102,241,0.12) 0%, rgba(168,85,247,0.08) 100%); border: 1px solid rgba(99,102,241,0.3); border-radius: 12px; text-align: left;">
+          <div style="display: flex; align-items: center; gap: 0.75rem; margin-bottom: 0.5rem;">
+            <span style="font-size: 1.4rem;" aria-hidden="true">📄</span>
+            <div>
+              <h2 style="margin: 0; font-size: 1rem; font-weight: 700; color: var(--text-primary);">PDF Accessibility Scanning <span style="font-size: 0.72rem; font-weight: 600; padding: 2px 8px; background: rgba(99,102,241,0.25); border-radius: 999px; color: #a5b4fc; vertical-align: middle;">Coming Soon</span></h2>
+              <p style="margin: 0.35rem 0 0; font-size: 0.82rem; color: var(--text-muted); line-height: 1.5;">Scan PDF documents for PDF/UA-1 and WCAG conformance — get a structured violation report and compliance score.</p>
+            </div>
+          </div>
+          <a id="pdf-early-access-link" href="mailto:iamsabroy@gmail.com?subject=PDF%20Scanning%20Early%20Access" style="display: inline-block; margin-top: 0.75rem; padding: 0.45rem 1.1rem; background: rgba(99,102,241,0.2); border: 1px solid rgba(99,102,241,0.4); border-radius: 8px; color: #a5b4fc; font-size: 0.82rem; font-weight: 600; text-decoration: none; transition: background 0.2s;" onmouseenter="this.style.background='rgba(99,102,241,0.35)'" onmouseleave="this.style.background='rgba(99,102,241,0.2)'">Request early access →</a>
+        </div>
+
       </div>
     </section>
   </main>
@@ -635,6 +647,15 @@
         <label for="admin-max-concurrent" class="form-label">Max Concurrent Scans</label>
         <p class="field-hint">Limit backend concurrency (e.g. 1 for strict serial execution across all parallel requests).</p>
         <input id="admin-max-concurrent" type="number" min="1" max="100" class="modal-input" style="width: 80px;" />
+      </div>
+
+      <div class="admin-toggle-section" style="margin-top: 1rem;">
+        <label class="form-label">PDF Scanning (Coming Soon) Visibility</label>
+        <div class="toggle-row">
+          <button id="pdf-visible-off" class="toggle-btn active" type="button" data-pdf="off">Hidden</button>
+          <button id="pdf-visible-on" class="toggle-btn" type="button" data-pdf="on">Visible</button>
+        </div>
+        <p class="field-hint">Internal only: reveals the &ldquo;PDF scanning &mdash; coming soon / request early access&rdquo; card in the main UI for sales demos. No PDF scanning backend exists; this is visibility-only.</p>
       </div>
 
       <div class="admin-toggle-section" style="margin-top: 1.5rem; text-align: right;">
