@@ -1,0 +1,52 @@
+# Dockerfile.cli — CLI Docker image for CI/CD scanning.
+#
+# Based on node:18-slim with distro Chromium installed.
+# The native engine files are shipped as verbatim, unbundled assets
+# because native_runner.js serializes evaluate() via .toString()
+# and reads native_engine.js from disk at runtime.
+#
+# Build:
+#   docker build -f Dockerfile.cli -t accessscan-cli .
+#
+# Run:
+#   docker run --rm accessscan-cli https://example.com --format json,sarif
+
+FROM node:18-slim
+
+# Install Chromium and minimal dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    chromium \
+    fonts-liberation \
+    libatk-bridge2.0-0 \
+    libatk1.0-0 \
+    libcups2 \
+    libdrm2 \
+    libgbm1 \
+    libnss3 \
+    libx11-xcb1 \
+    libxcomposite1 \
+    libxdamage1 \
+    libxrandr2 \
+    xdg-utils \
+  && rm -rf /var/lib/apt/lists/*
+
+# Set Chromium path for puppeteer-core
+ENV CHROMIUM_PATH=/usr/bin/chromium
+ENV NODE_ENV=production
+
+WORKDIR /app
+
+# Copy package files and install dependencies
+COPY packages/cli/package.json packages/cli/package-lock.json* ./
+RUN npm install --omit=dev 2>/dev/null || npm install --production
+
+# Copy CLI source, engine, and WCAG map (verbatim, NOT bundled)
+COPY packages/cli/bin/ ./bin/
+COPY packages/cli/src/ ./src/
+COPY packages/cli/engine/ ./engine/
+COPY packages/cli/wcag_map.json ./
+
+# Make CLI executable
+RUN chmod +x bin/a11yscan.js
+
+ENTRYPOINT ["node", "/app/bin/a11yscan.js"]

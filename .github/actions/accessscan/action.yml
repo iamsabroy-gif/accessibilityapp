@@ -1,0 +1,75 @@
+name: 'AccessScan — Accessibility CI Gate'
+description: '73 automated WCAG 2.1/2.2 checks for CI/CD pipelines. Surfaces violations as SARIF annotations in PRs.'
+author: 'accessscan'
+branding:
+  icon: 'shield'
+  color: 'blue'
+
+inputs:
+  url:
+    description: 'URL to scan (required if urls-file is not set)'
+    required: false
+  urls-file:
+    description: 'Path to file containing URLs to scan (one per line)'
+    required: false
+  wcag-level:
+    description: 'WCAG conformance level: A, AA, or AAA'
+    required: false
+    default: 'AA'
+  fail-on:
+    description: 'Minimum impact level to fail the build: critical, serious, moderate, minor, none'
+    required: false
+    default: 'serious'
+  warn-on:
+    description: 'Minimum impact level for warnings: critical, serious, moderate, minor, none'
+    required: false
+    default: 'moderate'
+  format:
+    description: 'Output formats (comma-separated): json, sarif, junit'
+    required: false
+    default: 'json,sarif'
+  output-dir:
+    description: 'Directory to write results'
+    required: false
+    default: './a11y-results'
+  timeout:
+    description: 'Page navigation timeout in seconds'
+    required: false
+    default: '180'
+
+outputs:
+  exit-code:
+    description: 'Exit code from the scan (0 = pass, 1 = threshold breached, 2 = scan error)'
+  results-path:
+    description: 'Path to the results directory'
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Run AccessScan
+      id: scan
+      shell: bash
+      run: |
+        ARGS=""
+        if [ -n "${{ inputs.url }}" ]; then
+          ARGS="$ARGS ${{ inputs.url }}"
+        fi
+        if [ -n "${{ inputs.urls-file }}" ]; then
+          ARGS="$ARGS --urls-file ${{ inputs.urls-file }}"
+        fi
+        ARGS="$ARGS --wcag-level ${{ inputs.wcag-level }}"
+        ARGS="$ARGS --fail-on ${{ inputs.fail-on }}"
+        ARGS="$ARGS --warn-on ${{ inputs.warn-on }}"
+        ARGS="$ARGS --format ${{ inputs.format }}"
+        ARGS="$ARGS --output-dir ${{ inputs.output-dir }}"
+        ARGS="$ARGS --timeout ${{ inputs.timeout }}"
+
+        set +e
+        node ${{ github.action_path }}/../../packages/cli/bin/a11yscan.js $ARGS
+        EXIT_CODE=$?
+        set -e
+
+        echo "exit-code=$EXIT_CODE" >> $GITHUB_OUTPUT
+        echo "results-path=${{ inputs.output-dir }}" >> $GITHUB_OUTPUT
+
+        exit $EXIT_CODE

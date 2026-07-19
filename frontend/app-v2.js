@@ -2319,6 +2319,25 @@ document.addEventListener('DOMContentLoaded', () => {
       card.setAttribute('aria-hidden', show ? 'false' : 'true');
     }
   }).catch(() => { /* non-critical */ });
+
+  // Auto-trigger scan if redirected from landing page with ?url= query param
+  const urlParams = new URLSearchParams(window.location.search);
+  const autoUrl   = urlParams.get('url');
+  if (autoUrl) {
+    if (urlInput) urlInput.value = autoUrl;
+    // Strip query param cleanly so refresh doesn't re-scan
+    const cleanPath = window.location.pathname.endsWith('/app') ? window.location.pathname : '/app';
+    window.history.replaceState(null, '', cleanPath);
+
+    ensureToken().then(async ok => {
+      if (ok && scanBtn) {
+        scanBtn.disabled = true;
+        const depth = parseInt(document.querySelector('input[name="scan-depth"]:checked')?.value ?? '0', 10);
+        await runScan(autoUrl, 'AAA', depth);
+        scanBtn.disabled = false;
+      }
+    });
+  }
 });
 
 

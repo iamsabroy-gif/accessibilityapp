@@ -1,5 +1,7 @@
 package models
 
+//go:generate go run ../../cmd/gen_wcag_map/main.go
+
 // WCAGMap maps axe‑core rule IDs to the WCAG 2.1 success‑criterion numbers they satisfy.
 // A rule can cover multiple criteria, therefore the value is a slice.
 var WCAGMap = map[string][]string{

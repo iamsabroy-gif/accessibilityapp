@@ -1,0 +1,36 @@
+{
+  "name": "@accessscan/cli",
+  "version": "0.1.0",
+  "description": "Accessibility scanner CLI — 73 automated WCAG 2.1/2.2 checks for CI/CD pipelines",
+  "bin": {
+    "a11yscan": "./bin/a11yscan.js"
+  },
+  "main": "src/scan.js",
+  "scripts": {
+    "test": "echo \"TODO: add tests\" && exit 0"
+  },
+  "dependencies": {
+    "commander": "^12.0.0",
+    "puppeteer-core": "^21.0.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "files": [
+    "bin/",
+    "src/",
+    "engine/",
+    "wcag_map.json",
+    "README.md"
+  ],
+  "keywords": [
+    "accessibility",
+    "a11y",
+    "wcag",
+    "ci",
+    "github-action",
+    "sarif"
+  ],
+  "license": "UNLICENSED",
+  "private": true
+}

@@ -1,0 +1,791 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AccessScan — Next-Gen WCAG & Compliance Accessibility Scanner</title>
+  <meta name="description" content="Instant WCAG 2.1 AA/AAA web accessibility scanner with a proprietary detection engine covering 63 checks across 43 success criteria. Get dual-scoring metrics, per-element fix guidance, and certified legal reports for ADA, EAA 2025, VPAT, and 11 global standards." />
+  <meta name="theme-color" content="#070b18" />
+  <link rel="stylesheet" href="style-v2.css" />
+  <style>
+    /* Landing page specific layout & component styles */
+    .landing-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 1.25rem 2rem;
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+    .landing-nav-links {
+      display: flex;
+      align-items: center;
+      gap: 1.75rem;
+    }
+    .landing-nav-links a {
+      color: var(--text-secondary);
+      text-decoration: none;
+      font-size: 0.9rem;
+      font-weight: 500;
+      transition: color 0.2s ease;
+    }
+    .landing-nav-links a:hover {
+      color: var(--text-primary);
+    }
+    .btn-nav-cta {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 0.5rem 1.1rem;
+      background: linear-gradient(135deg, var(--accent-start), var(--accent-end));
+      color: #fff;
+      font-size: 0.85rem;
+      font-weight: 600;
+      border-radius: var(--radius-sm);
+      text-decoration: none;
+      box-shadow: 0 4px 14px var(--accent-glow);
+      transition: transform 0.2s ease, box-shadow 0.2s ease;
+    }
+    .btn-nav-cta:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 6px 20px rgba(99,102,241,0.5);
+    }
+
+    /* Landing Hero */
+    .landing-hero {
+      text-align: center;
+      padding: 4rem 1.5rem 3rem;
+      max-width: 900px;
+      margin: 0 auto;
+    }
+    .hero-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 16px;
+      background: rgba(99,102,241,0.1);
+      border: 1px solid var(--border-accent);
+      border-radius: var(--radius-full);
+      color: var(--text-accent);
+      font-size: 0.85rem;
+      font-weight: 600;
+      margin-bottom: 1.5rem;
+    }
+    .landing-hero h1 {
+      font-size: 3.25rem;
+      font-weight: 800;
+      line-height: 1.15;
+      letter-spacing: -0.02em;
+      margin-bottom: 1.25rem;
+      background: linear-gradient(135deg, #ffffff 0%, #cbd5e1 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    @media (max-width: 768px) {
+      .landing-hero h1 { font-size: 2.25rem; }
+    }
+    .landing-hero .subhead {
+      font-size: 1.15rem;
+      color: var(--text-secondary);
+      max-width: 720px;
+      margin: 0 auto 2.5rem;
+      line-height: 1.6;
+    }
+
+    /* Hero Form */
+    .hero-form-box {
+      max-width: 680px;
+      margin: 0 auto 1.5rem;
+    }
+    .hero-form-box .input-group {
+      display: flex;
+      gap: 8px;
+      background: var(--bg-surface);
+      border: 1px solid var(--border-accent);
+      padding: 6px;
+      border-radius: var(--radius-md);
+      box-shadow: 0 8px 32px rgba(0,0,0,0.4), 0 0 0 1px rgba(99,102,241,0.2);
+    }
+    .hero-form-box input[type="url"] {
+      flex: 1;
+      background: transparent;
+      border: none;
+      padding: 0.75rem 1rem;
+      color: var(--text-primary);
+      font-size: 1rem;
+      outline: none;
+    }
+    .hero-form-box button {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 0.75rem 1.75rem;
+      background: linear-gradient(135deg, var(--accent-start), var(--accent-end));
+      color: #fff;
+      font-size: 0.95rem;
+      font-weight: 600;
+      border: none;
+      border-radius: var(--radius-sm);
+      cursor: pointer;
+      box-shadow: 0 4px 14px var(--accent-glow);
+      transition: all 0.2s ease;
+      white-space: nowrap;
+    }
+    .hero-form-box button:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 6px 20px rgba(99,102,241,0.5);
+    }
+    .btn-hero-cta {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      padding: 0.85rem 2.25rem;
+      background: linear-gradient(135deg, var(--accent-start), var(--accent-end));
+      color: #fff;
+      font-size: 1.05rem;
+      font-weight: 700;
+      border-radius: var(--radius-md);
+      text-decoration: none;
+      box-shadow: 0 6px 20px var(--accent-glow);
+      transition: all 0.2s ease;
+    }
+    .btn-hero-cta:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 8px 25px rgba(99,102,241,0.5);
+    }
+    .micro-trust {
+      font-size: 0.85rem;
+      color: var(--text-muted);
+      margin-top: 0.75rem;
+    }
+
+    /* Engine Feature Chips */
+    .feature-chips {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      gap: 10px;
+      margin-top: 2.5rem;
+    }
+    .chip-item {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 14px;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-full);
+      font-size: 0.82rem;
+      color: var(--text-secondary);
+    }
+
+    /* Section Wrappers */
+    .landing-section {
+      padding: 5rem 1.5rem;
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+    .section-title {
+      text-align: center;
+      font-size: 2.25rem;
+      font-weight: 700;
+      letter-spacing: -0.01em;
+      margin-bottom: 0.75rem;
+    }
+    .section-subtitle {
+      text-align: center;
+      font-size: 1.05rem;
+      color: var(--text-secondary);
+      max-width: 680px;
+      margin: 0 auto 3rem;
+    }
+
+    /* Live Preview Mockup */
+    .preview-card {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-accent);
+      border-radius: var(--radius-lg);
+      padding: 2rem;
+      box-shadow: 0 20px 40px rgba(0,0,0,0.5);
+      position: relative;
+      overflow: hidden;
+    }
+    .preview-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 1.25rem;
+      margin-bottom: 1.75rem;
+      flex-wrap: wrap;
+      gap: 1rem;
+    }
+    .preview-meta {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+    }
+    .preview-url {
+      font-weight: 600;
+      font-size: 1.1rem;
+      color: var(--text-primary);
+    }
+    .preview-stats-row {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 1.5rem;
+      margin-bottom: 2rem;
+    }
+    .preview-stat-box {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      padding: 1.25rem;
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+    }
+    .preview-score-dial {
+      width: 64px;
+      height: 64px;
+      border-radius: 50%;
+      border: 4px solid var(--grade-c);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      font-weight: 800;
+      font-size: 1.25rem;
+      color: var(--grade-c);
+      background: rgba(245,158,11,0.08);
+    }
+    .preview-score-label {
+      font-size: 0.75rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    .mock-violation {
+      background: rgba(255,255,255,0.02);
+      border: 1px solid var(--border);
+      border-left: 4px solid var(--critical);
+      border-radius: var(--radius-md);
+      padding: 1.25rem;
+      margin-bottom: 1rem;
+    }
+    .mock-violation.serious {
+      border-left-color: var(--serious);
+    }
+    .mock-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 0.5rem;
+    }
+    .badge-critical {
+      background: var(--critical-bg);
+      color: var(--critical);
+      padding: 2px 10px;
+      border-radius: var(--radius-full);
+      font-size: 0.75rem;
+      font-weight: 700;
+      text-transform: uppercase;
+    }
+    .badge-serious {
+      background: var(--serious-bg);
+      color: var(--serious);
+      padding: 2px 10px;
+      border-radius: var(--radius-full);
+      font-size: 0.75rem;
+      font-weight: 700;
+      text-transform: uppercase;
+    }
+    .mock-code {
+      background: #040711;
+      border: 1px solid rgba(255,255,255,0.1);
+      padding: 0.6rem 0.8rem;
+      border-radius: 6px;
+      font-family: monospace;
+      font-size: 0.82rem;
+      color: #cbd5e1;
+      margin: 0.6rem 0;
+      overflow-x: auto;
+    }
+    .mock-fix {
+      font-size: 0.85rem;
+      color: var(--text-accent);
+      background: rgba(99,102,241,0.08);
+      padding: 0.5rem 0.75rem;
+      border-radius: 6px;
+      border: 1px solid rgba(99,102,241,0.2);
+    }
+
+    /* Dual Score Grid */
+    .dual-score-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 2rem;
+    }
+    @media (max-width: 768px) {
+      .dual-score-grid { grid-template-columns: 1fr; }
+    }
+    .score-card {
+      background: var(--bg-surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      padding: 2rem;
+      transition: border-color 0.2s ease;
+    }
+    .score-card:hover {
+      border-color: var(--border-accent);
+    }
+    .score-card-icon {
+      font-size: 2rem;
+      margin-bottom: 1rem;
+    }
+    .score-card h3 {
+      font-size: 1.25rem;
+      margin-bottom: 0.75rem;
+      font-weight: 700;
+    }
+    .score-card p {
+      color: var(--text-secondary);
+      font-size: 0.95rem;
+      line-height: 1.6;
+      margin-bottom: 1.25rem;
+    }
+    .score-card-bullets {
+      list-style: none;
+    }
+    .score-card-bullets li {
+      position: relative;
+      padding-left: 1.5rem;
+      margin-bottom: 0.5rem;
+      font-size: 0.9rem;
+      color: var(--text-secondary);
+    }
+    .score-card-bullets li::before {
+      content: '✓';
+      position: absolute;
+      left: 0;
+      color: var(--pass);
+      font-weight: bold;
+    }
+
+    /* Steps Grid */
+    .steps-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 2rem;
+    }
+    @media (max-width: 768px) {
+      .steps-grid { grid-template-columns: 1fr; }
+    }
+    .step-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      padding: 2rem;
+      text-align: center;
+    }
+    .step-number {
+      width: 48px;
+      height: 48px;
+      border-radius: 50%;
+      background: rgba(99,102,241,0.15);
+      border: 1px solid var(--border-accent);
+      color: var(--text-accent);
+      font-size: 1.25rem;
+      font-weight: 800;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin: 0 auto 1.25rem;
+    }
+
+    /* Compliance Band Grid */
+    .compliance-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 1rem;
+    }
+    .compliance-badge-item {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      padding: 1rem;
+      text-align: center;
+      font-weight: 600;
+      font-size: 0.9rem;
+      color: var(--text-primary);
+      transition: all 0.2s ease;
+      position: relative;
+    }
+    .compliance-badge-item:hover {
+      background: var(--bg-card-hover);
+      border-color: var(--border-accent);
+    }
+    .flag-icon {
+      font-size: 1.25rem;
+      display: block;
+      margin-bottom: 0.35rem;
+    }
+    .highlight-tag {
+      position: absolute;
+      top: -8px;
+      right: 10px;
+      background: linear-gradient(135deg, var(--accent-start), var(--accent-end));
+      color: #fff;
+      font-size: 0.65rem;
+      font-weight: 700;
+      padding: 2px 6px;
+      border-radius: var(--radius-full);
+      text-transform: uppercase;
+    }
+
+    /* CI Section */
+    .ci-card {
+      background: linear-gradient(135deg, rgba(13,20,36,0.9) 0%, rgba(20,28,48,0.9) 100%);
+      border: 1px solid var(--border-accent);
+      border-radius: var(--radius-lg);
+      padding: 3rem 2rem;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 2.5rem;
+      align-items: center;
+    }
+    @media (max-width: 850px) {
+      .ci-card { grid-template-columns: 1fr; }
+    }
+    .ci-code-block {
+      background: #040711;
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: var(--radius-md);
+      padding: 1.25rem;
+      font-family: monospace;
+      font-size: 0.85rem;
+      color: #cbd5e1;
+      line-height: 1.5;
+      overflow-x: auto;
+    }
+
+    /* Footer */
+    .landing-footer {
+      border-top: 1px solid var(--border);
+      padding: 3rem 1.5rem;
+      text-align: center;
+      color: var(--text-muted);
+      font-size: 0.88rem;
+    }
+    .footer-links {
+      display: flex;
+      justify-content: center;
+      gap: 2rem;
+      margin-bottom: 1.5rem;
+    }
+    .footer-links a {
+      color: var(--text-secondary);
+      text-decoration: none;
+      transition: color 0.2s ease;
+    }
+    .footer-links a:hover {
+      color: var(--text-primary);
+    }
+  </style>
+</head>
+<body>
+<div id="app">
+
+  <!-- TOPBAR -->
+  <header class="landing-header" role="banner">
+    <div class="topbar-brand" style="display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: 1.15rem;">
+      <div class="brand-icon" aria-hidden="true" style="font-size: 1.3rem;">♿</div>
+      <span>AccessScan</span>
+    </div>
+    <nav class="landing-nav-links" aria-label="Main navigation">
+      <a href="#features">Features</a>
+      <a href="#dual-scoring">Dual Scoring</a>
+      <a href="#compliance">Compliance</a>
+      <a href="#ci-cd">CI/CD Integration</a>
+      <a href="/app" class="btn-nav-cta">Open Scanner →</a>
+    </nav>
+  </header>
+
+  <!-- HERO SECTION -->
+  <section class="landing-hero" aria-label="Introduction">
+    <div class="hero-chip">
+      <span aria-hidden="true">⚡</span> Next-Gen Accessibility Scanner Engine
+    </div>
+
+    <h1>Accessibility audit for your website in 30 seconds.</h1>
+
+    <p class="subhead">
+      Scan any public URL for WCAG 2.1 A/AA violations. Get dual-scoring metrics, per-element developer fix guidance, and instant certified compliance reports for 11 global regulatory standards.
+    </p>
+
+    <div class="hero-cta-box" style="margin-bottom: 1.5rem;">
+      <a href="/app" class="btn-hero-cta">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true">
+          <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+        </svg>
+        Open Scanner App →
+      </a>
+      <p class="micro-trust" style="margin-top: 1rem;">✓ No account required &nbsp;•&nbsp; Results in ~30 seconds &nbsp;•&nbsp; 63 checks across 43 WCAG success criteria</p>
+    </div>
+
+    <div class="feature-chips">
+      <div class="chip-item"><span>🎯</span> Proprietary Detection Engine</div>
+      <div class="chip-item"><span>📋</span> 63 rules across 43 WCAG 2.1 A/AA criteria</div>
+      <div class="chip-item"><span>🔍</span> 22 custom validation checks</div>
+      <div class="chip-item"><span>🛠️</span> Per-element DOM fix suggestions</div>
+    </div>
+  </section>
+
+  <!-- LIVE RESULT PREVIEW SECTION -->
+  <section id="features" class="landing-section" aria-label="Audit preview">
+    <h2 class="section-title">See what an AccessScan audit delivers</h2>
+    <p class="section-subtitle">Real headless browser rendering via Puppeteer combined with instant actionable remediation code.</p>
+
+    <div class="preview-card">
+      <div class="preview-header">
+        <div class="preview-meta">
+          <span class="preview-url">https://example-store.com</span>
+          <span style="font-size: 0.8rem; color: var(--text-muted);">Scanned 2 mins ago • Depth 0</span>
+        </div>
+        <div style="display: flex; gap: 8px;">
+          <span style="padding: 4px 10px; background: rgba(255,255,255,0.05); border-radius: 6px; font-size: 0.8rem; color: var(--text-secondary);">WCAG 2.1 Level AA</span>
+        </div>
+      </div>
+
+      <div class="preview-stats-row">
+        <div class="preview-stat-box">
+          <div class="preview-score-dial">
+            <span>68</span>
+          </div>
+          <div>
+            <div class="preview-score-label" style="color: var(--grade-c);">Grade C • Penalty Score</div>
+            <div style="font-size: 0.82rem; color: var(--text-muted); margin-top: 2px;">Penalty deductions applied</div>
+          </div>
+        </div>
+
+        <div class="preview-stat-box">
+          <div style="font-size: 1.75rem; font-weight: 800; color: var(--critical);">3</div>
+          <div>
+            <div style="font-size: 0.85rem; font-weight: 600;">Critical Violations</div>
+            <div style="font-size: 0.8rem; color: var(--text-muted);">-20 pts penalty deduction each</div>
+          </div>
+        </div>
+
+        <div class="preview-stat-box">
+          <div style="font-size: 1.75rem; font-weight: 800; color: var(--pass);">38</div>
+          <div>
+            <div style="font-size: 0.85rem; font-weight: 600;">Passed Checks</div>
+            <div style="font-size: 0.8rem; color: var(--text-muted);">Rules evaluated successfully</div>
+          </div>
+        </div>
+      </div>
+
+      <h4 style="margin-bottom: 1rem; font-size: 1rem; color: var(--text-primary);">Sample Diagnostic Violations &amp; Fixes</h4>
+
+      <div class="mock-violation">
+        <div class="mock-header">
+          <span class="badge-critical">Critical Impact (-20 pts)</span>
+          <span style="font-size: 0.8rem; color: var(--text-muted);">WCAG 1.4.3 Contrast (Minimum)</span>
+        </div>
+        <div style="font-weight: 600; font-size: 0.95rem;">color-contrast: Elements must have sufficient color contrast</div>
+        <div class="mock-code">&lt;button class="btn-submit" style="background: #a5b4fc; color: #ffffff;"&gt;Complete Purchase&lt;/button&gt;</div>
+        <div class="mock-fix"><strong>💡 Fix Guidance:</strong> Contrast ratio is 2.8:1 (minimum 4.5:1 required). Change background color to <code>#4f46e5</code> or text color to <code>#1e1b4b</code>.</div>
+      </div>
+
+      <div class="mock-violation serious">
+        <div class="mock-header">
+          <span class="badge-serious">Serious Impact (-10 pts)</span>
+          <span style="font-size: 0.8rem; color: var(--text-muted);">WCAG 1.1.1 Non-text Content</span>
+        </div>
+        <div style="font-weight: 600; font-size: 0.95rem;">image-alt: Images must have alternate text for screen readers</div>
+        <div class="mock-code">&lt;img src="/assets/hero-banner.jpg" class="hero-img"&gt;</div>
+        <div class="mock-fix"><strong>💡 Fix Guidance:</strong> Add a descriptive <code>alt</code> attribute (e.g. <code>alt="Summer sale promotion 20% off"</code>) or <code>alt=""</code> if purely decorative.</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- DUAL SCORING EXPLAINER -->
+  <section id="dual-scoring" class="landing-section" aria-label="Dual scoring system">
+    <h2 class="section-title">One score for your boss. One score for your engineers.</h2>
+    <p class="section-subtitle">Dual-scoring architecture designed to bridge executive reporting and engineering precision.</p>
+
+    <div class="dual-score-grid">
+      <div class="score-card">
+        <div class="score-card-icon">📊</div>
+        <h3>Penalty-Based Accessibility Score (0–100 &amp; Grade A–F)</h3>
+        <p>A fast, impact-weighted grading scale that penalizes high-severity accessibility barriers. Perfect for leadership updates and clear progress tracking.</p>
+        <ul class="score-card-bullets">
+          <li>Deducts points based on user impact: Critical (-20), Serious (-10), Moderate (-5), Minor (-2)</li>
+          <li>Generates instant letter grades (A ≥ 90, B ≥ 75, C ≥ 40, D ≥ 25, F &lt; 25)</li>
+          <li>Prevents severe critical violations from hiding behind high pass percentages</li>
+        </ul>
+      </div>
+
+      <div class="score-card">
+        <div class="score-card-icon">⚖️</div>
+        <h3>AudioEye-Style Compliance Score (%)</h3>
+        <p>A mathematical compliance calculation evaluated across tested WCAG Success Criteria and DOM element node counts.</p>
+        <ul class="score-card-bullets">
+          <li>Calculates exact failure rate per WCAG Success Criterion</li>
+          <li>Directly maps to legal audit requirements and VPAT / ACR documentation</li>
+          <li>Provides granular success criterion breakdown across 43 WCAG 2.1 A/AA criteria</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- HOW IT WORKS -->
+  <section class="landing-section" aria-label="How it works">
+    <h2 class="section-title">How AccessScan Works</h2>
+    <p class="section-subtitle">Automated, transparent, and accurate accessibility audits in 3 steps.</p>
+
+    <div class="steps-grid">
+      <div class="step-card">
+        <div class="step-number">1</div>
+        <h3 style="margin-bottom: 0.5rem; font-size: 1.1rem;">Enter Any Public URL</h3>
+        <p style="font-size: 0.9rem; color: var(--text-secondary);">Input your website or web application URL. No account or API key setup required to begin.</p>
+      </div>
+
+      <div class="step-card">
+        <div class="step-number">2</div>
+        <h3 style="margin-bottom: 0.5rem; font-size: 1.1rem;">Headless Browser Execution</h3>
+        <p style="font-size: 0.9rem; color: var(--text-secondary);">Puppeteer loads the dynamically rendered DOM and evaluates 63 automated WCAG rules, including 22 custom checks beyond baseline coverage.</p>
+      </div>
+
+      <div class="step-card">
+        <div class="step-number">3</div>
+        <h3 style="margin-bottom: 0.5rem; font-size: 1.1rem;">Actionable Report &amp; Fixes</h3>
+        <p style="font-size: 0.9rem; color: var(--text-secondary);">Review DOM selectors, code snippets, and generate 1-click legal compliance reports (PDF/HTML).</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- COMPLIANCE BAND -->
+  <section id="compliance" class="landing-section" aria-label="Compliance standards">
+    <h2 class="section-title">One scan. Every international compliance standard.</h2>
+    <p class="section-subtitle">Generate certified audit reports tailored to global regulatory frameworks and legal standards.</p>
+
+    <div class="compliance-grid">
+      <div class="compliance-badge-item">
+        <span class="flag-icon">🇺🇸</span>
+        ADA Title III
+      </div>
+      <div class="compliance-badge-item">
+        <span class="flag-icon">🇺🇸</span>
+        Section 508 VPAT
+      </div>
+      <div class="compliance-badge-item" style="border-color: var(--accent-start);">
+        <span class="highlight-tag">Mandatory EU</span>
+        <span class="flag-icon">🇪🇺</span>
+        EAA (2025 Act)
+      </div>
+      <div class="compliance-badge-item">
+        <span class="flag-icon">🇪🇺</span>
+        EN 301 549
+      </div>
+      <div class="compliance-badge-item">
+        <span class="flag-icon">🇬🇧</span>
+        Equality Act 2010
+      </div>
+      <div class="compliance-badge-item">
+        <span class="flag-icon">🇨🇦</span>
+        AODA (Ontario)
+      </div>
+      <div class="compliance-badge-item">
+        <span class="flag-icon">🇨🇦</span>
+        ACA (Canada)
+      </div>
+      <div class="compliance-badge-item">
+        <span class="flag-icon">🇦🇺</span>
+        DDA 1992
+      </div>
+      <div class="compliance-badge-item">
+        <span class="flag-icon">🇮🇳</span>
+        GIGW 3.0
+      </div>
+      <div class="compliance-badge-item">
+        <span class="flag-icon">🇺🇸</span>
+        CVAA
+      </div>
+      <div class="compliance-badge-item">
+        <span class="flag-icon">🇩🇪</span>
+        BITV 2.0
+      </div>
+    </div>
+  </section>
+
+  <!-- CI / CD ENGINEERING SECTION -->
+  <section id="ci-cd" class="landing-section" aria-label="CI integration">
+    <div class="ci-card">
+      <div>
+        <h2 style="font-size: 1.85rem; font-weight: 700; margin-bottom: 1rem;">Gate your builds on accessibility</h2>
+        <p style="color: var(--text-secondary); line-height: 1.6; margin-bottom: 0.75rem;">
+          63 automated WCAG 2.1/2.2 checks that run entirely inside your CI runner — no hosted API, no auth, no account. Fail builds on severity thresholds, surface violations as inline PR annotations via SARIF.
+        </p>
+        <p style="color: var(--text-secondary); line-height: 1.6; margin-bottom: 1.5rem; font-size: 0.9rem; opacity: 0.85;">
+          <strong>GitHub Action shipping soon.</strong> Tell us your CI system and we'll prioritize accordingly.
+        </p>
+        <a href="mailto:iamsabroy@gmail.com?subject=CI/CD%20Integration%20Interest&body=My%20CI%20system%3A%20(GitHub%20Actions%20%2F%20GitLab%20%2F%20Generic%20CLI)%0A%0A" class="btn-nav-cta" style="padding: 0.75rem 1.5rem; font-size: 0.95rem;">Tell us your CI system →</a>
+      </div>
+
+      <div class="ci-code-block">
+<span style="color: #64748b;"># .github/workflows/accessibility.yml</span>
+<span style="color: #f43f5e;">name</span>: Accessibility
+<span style="color: #f43f5e;">on</span>: [pull_request]
+
+<span style="color: #f43f5e;">jobs</span>:
+  <span style="color: #a5b4fc;">a11y</span>:
+    <span style="color: #f43f5e;">runs-on</span>: ubuntu-latest
+    <span style="color: #f43f5e;">steps</span>:
+      - <span style="color: #f43f5e;">uses</span>: actions/checkout@v4
+
+      - <span style="color: #f43f5e;">name</span>: <span style="color: #10b981;">Run accessibility scan</span>
+        <span style="color: #f43f5e;">uses</span>: accessscan/action@v1
+        <span style="color: #f43f5e;">with</span>:
+          <span style="color: #38bdf8;">url</span>: <span style="color: #10b981;">'${{ secrets.STAGING_URL }}'</span>
+          <span style="color: #38bdf8;">fail-on</span>: <span style="color: #10b981;">serious</span>
+          <span style="color: #38bdf8;">format</span>: <span style="color: #10b981;">json,sarif</span>
+
+      - <span style="color: #f43f5e;">name</span>: <span style="color: #10b981;">Upload SARIF</span>
+        <span style="color: #f43f5e;">if</span>: always()
+        <span style="color: #f43f5e;">uses</span>: github/codeql-action/upload-sarif@v3
+        <span style="color: #f43f5e;">with</span>:
+          <span style="color: #38bdf8;">sarif_file</span>: <span style="color: #10b981;">./a11y-results/</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- FINAL HERO CTA -->
+  <section class="landing-hero" style="padding-top: 2rem; padding-bottom: 5rem;" aria-label="Start scanning CTA">
+    <h2 style="font-size: 2.25rem; font-weight: 800; margin-bottom: 1rem;">Ready to test your website's accessibility?</h2>
+    <p class="subhead" style="margin-bottom: 2rem;">No registration required. Free instant scan in 30 seconds.</p>
+
+    <div>
+      <a href="/app" class="btn-hero-cta">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true">
+          <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+        </svg>
+        Open Scanner App →
+      </a>
+    </div>
+  </section>
+
+  <!-- FOOTER -->
+  <footer class="landing-footer" role="contentinfo">
+    <div class="footer-links">
+      <a href="/app">Open Scanner App</a>
+      <a href="/app#coverage">WCAG Coverage</a>
+      <a href="mailto:iamsabroy@gmail.com">Contact Support</a>
+    </div>
+    <p>© 2026 AccessScan. All rights reserved. 63 automated checks mapped to WCAG 2.1/2.2 A/AA/AAA success criteria.</p>
+  </footer>
+
+</div><!-- #app -->
+</body>
+</html>

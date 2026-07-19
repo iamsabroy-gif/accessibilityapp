@@ -1,156 +1,130 @@
-# Suggestion Memo — Compliance Report Gap Implementation Review
+# Chrome Extension — Implementation Suggestions (for build agent)
 
-> **Reviewer's Note (2026-07-10)**: The "Gap 6: ✅ verified" row in the table below (line 38) was incomplete. While it confirmed wiring into 8 report formatters, it failed to verify HTML escaping of the output (leading to escaped markup rendering in reports, fixed in Task 1 of implementation_iteration1.md) and overlooked the FSD-mandated ADA formatter (which was silently skipped, fixed in Task 2). The remaining Issues A–D remain valid and have been fully addressed.
+Source: review of `chrome_implementation.md` against the current backend (`internal/api/*`, `scripts/axe_runner.js`, `CLAUDE.md`). These are concrete gaps and doc-bugs that will cause rework if not addressed. Items are ordered by impact.
 
-**Prepared for**: Claude agent (review / remediation pass)
-**Date**: 2026-07-10
-**Author**: Loco (verification pass against code, not prose)
-**Scope**: Reconcile `fsd.md`, `fsd_implementation.md`, `implementation.md`, `walkthrough.md`
-with the ACTUAL code state, and clear the CI-blocking test failures.
-**Repo**: `/Users/sabyasachiroy/projects/webaccessibility`
+Status: proposed | For: Antigravity build agent | Do NOT implement code here — this is a review handoff.
 
 ---
 
-## 0. TL;DR
+## BLOCKERS — contradictions between the plan and the real backend
 
-The backend FSD work (Gaps 1–6) and the NotAutomatable short-circuit bugfix are **real and
-verified in code**. The deliverable docs are accurate in substance but have two defects that
-matter before merge:
+### B1. "Get full report" cannot reach localhost / authenticated pages (the stated differentiator)
+The plan (lines 33-35) correctly notes the *pure remote* model can't reach private URLs. But its own "Get full report" CTA calls `POST /api/v1/scan`, which is a **server-side Puppeteer re-scan of the URL**.
 
-1. **Docs undercount coverage** — they say "6 unmapped SCs flagged NotAutomatable" but the code
-   flags all **15** FSD-unmapped A/AA SCs. Misleads a doc-based auditor.
-2. **`go test ./...` is RED** — 2 stale tests in `internal/scanner` fail. They pre-date this work
-   but will block CI. The walkthrough only shows the scoped test command, hiding this.
+- `internal/api/handler.go:69` sets `X-Scan-URL` from the request body.
+- `internal/api/middleware.go:58-77` (`ssrfGuard`) blocks `127.x / localhost / 10.x / 192.168.x / 172.16-31.x / ::1 / 0.0.0.0` unless `ALLOW_PRIVATE_SCANS=true`.
+- The plan names "developers scanning localhost / authenticated SPAs" as the core differentiator (lines 12-14).
 
-Both are cheap to fix. Recommendations below.
+So for that exact audience, "Get full report" returns 403, or scans a login wall / stale DOM state.
 
----
+**Required decision (pick one, write it into the plan):**
+- (a) Scope "Get full report" to public URLs only; localhost is overlay-only in v1. Document this explicitly.
+- (b) Add an `ALLOW_PRIVATE_SCANS`-gated path and document that localhost reporting is opt-in server config.
 
-## 1. VERIFIED GOOD — do not re-litigate
+Do not leave this ambiguous — it determines whether the differentiator actually works.
 
-These claims were checked directly in source and match:
+### B2. Backend scan WCAG level is hardcoded to AAA, not AA
+- `internal/api/handler.go:68` — `const wcagLevel = "AAA"` (ignores any client-supplied level).
+- `scripts/axe_runner.js:40,49` defaults to **AA**.
+- Plan line 127 says the overlay should use "the same rule config as `scripts/axe_runner.js`" for parity.
 
-| Claim | Evidence (file:line) | Status |
-|-------|----------------------|--------|
-| Gap 1: 2.2 `continue` skip removed | no `WCAGVersion == "2.2"` skip in `BuildComplianceReport` (score.go:408+) | ✅ |
-| Gap 1: 7 WCAG 2.2 registry entries added | sc_registry.go 2.4.11/2.4.13/2.5.7/2.5.8/3.2.6/3.3.7/3.3.8 present | ✅ |
-| Gap 3: `incomplete` in compliance denominator | `Calculate(violations, passCount, incomplete, formula)`; `total = passCount + len(violations) + incomplete` (score.go:72,74) | ✅ |
-| Gap 4: AudioEye zero-eval → 0/F + Warning | score.go:230-238 | ✅ |
-| Gap 5: scan level uses config | handler.go:441 `config.GetWCAGLevel()` | ✅ |
-| Gap 6: Scope & Limitations block | `scope_block.go` exports `ScopeBlockHTML`/`conformanceClass`; wired into 8 formatters | ✅ |
-| Bug: `NotAutomatable && !hasRule` gate | score.go:438 | ✅ |
-| 15 unmapped A/AA SCs now `NotAutomatable:true` | verified each: 1.2.4,1.2.5,1.4.2,1.4.5,2.1.4,2.2.2,2.3.1,2.5.2,2.5.4,3.2.2,3.2.3,3.2.4,3.3.3,3.3.4,4.1.3 | ✅ |
-| `go build ./...` clean; scoring+report 19 tests pass | confirmed | ✅ |
+Result: overlay (AA) and report (AAA) flag **different rule sets** — the opposite of the parity the plan wants.
 
----
+**Fix:**
+- Pin the extension's `axe.run()` config to **AAA** so it matches what `/api/v1/scan` actually executes (not axe_runner.js's AA default).
+- Fix the doc wording: "match the backend scan rule set (AAA per handler.go), not axe_runner.js's AA default."
+- SEPARATE ISSUE: confirm whether the hardcoded-AAA in `handler.go` is intentional. If the product should honor `wcag_level`, that's a backend bug to raise independently.
 
-## 2. ISSUE A — Doc undercount of NotAutomatable SCs (cosmetic, but misleading)
+### B3. Doc bug: `/api/v1/session` is GET, not POST
+- Plan lines 53-54 and line 111 say "POST /api/v1/session."
+- `internal/api/router.go:24` — `r.Get("/session", ...)`.
 
-**Where**:
-- `walkthrough.md` line 14 ("Flagged 6 unmapped SCs"), line 47 ("Set `NotAutomatable: true` ... to 6 silent A/AA criteria")
-- `fsd_implementation.md` line 14 (Gap 2: "6 unmapped A/AA SCs"), line 42-53 table ("Newly flagged NotAutomatable:true" lists 6)
-
-**Reality**: The code flags **all 15** FSD-unmapped A/AA SCs as `NotAutomatable:true` (verified above). The 6 named in the docs (1.2.5, 1.4.2, 2.1.4, 2.5.2, 3.3.3, 4.1.3) are a subset; the other 9 (1.2.4, 1.4.5, 2.2.2, 2.3.1, 2.5.4, 3.2.2, 3.2.3, 3.2.4, 3.3.4) are also flagged but undocumented.
-
-**Why it matters**: A reviewer reading only the docs would conclude 9 SCs are still silently
-`NotEvaluated`. They are not. The doc understates the fix.
-
-**Suggestion**: Update both docs to say "15 previously-unmapped Level A/AA SCs" and either list
-all 15 or state the count explicitly. No code change.
+The service worker must `GET` the session endpoint. Copying the plan verbatim will burn a build cycle. Fix the doc.
 
 ---
 
-## 3. ISSUE B — `go test ./...` is RED (CI blocker)
+## UNDERSPECIFIED HANDOFFS — will block build if not resolved
 
-Two tests in `internal/scanner/wcag122_test.go` fail. They pre-date this PR (confirmed via the
-`fsd_implementation.md` git-stash note) but are still red and will break any `./...` CI gate.
+### U1. Report handoff contract is undefined
+Plan says "open result in the existing frontend (or a popup report view)" and "reuse `frontend/app-v2.js`." But `/scan` returns **JSON**, and the frontend SPA normally runs its own scan. You must define exactly how the extension surfaces the report:
 
-### B1. `TestWCAGMap_122_ExistingRulesDoNotClaimSC122` (line 114-129)
-- **Fails**: `unexpected: existing rule "video-captions-track" also maps to 1.2.2`
-- **Root cause**: The test skips only 3 "new" 1.2.2 rules
-  (`video-captions-present`, `video-captions-track-src`, `video-captions-track-lang`) but
-  `wcag_mapping.go:16` also maps `"video-captions-track": {"1.2.2"}` — a legitimate pre-existing
-  1.2.2 mapper not in the skip set. So the assertion trips on a valid mapping.
-- **Suggested fix** (minimal, preserves intent): add `"video-captions-track"` to the
-  `new122Rules` skip map at line 116-120:
-  ```go
-  new122Rules := map[string]bool{
-      "video-captions-present":    true,
-      "video-captions-track":      true, // pre-existing 1.2.2 mapper (wcag_mapping.go:16)
-      "video-captions-track-src":  true,
-      "video-captions-track-lang": true,
-  }
-  ```
-  Alternative (stronger): rename the test to assert "no rule maps to 1.2.2 UNLESS it is a
-  known caption rule" and keep the full allowlist. Either is fine.
+- **A.** Extension opens `<frontend>/report?url=<enc>` → frontend re-runs `/scan` (double scan, simplest).
+- **B.** Backend returns a shareable report URL/id the frontend deep-links to (needs backend change).
+- **C.** Extension posts the JSON into the frontend via query/blob and frontend renders it (needs a documented entry point in `app-v2.js`).
 
-### B2. `TestIntegration_122_FullPipeline_Violation` (line 354-375)
-- **Fails**: `report.Score = 0; want 80` and `report.Grade = "F"; want 'B'`
-- **Root cause**: The test assumes the **penalty** formula (1 critical = −20 → 80/B). But
-  `scoring.Report(result)` reads `result.Summary.Score`, which the scanner computes with the
-  **default `compliance` formula**. With 1 violation and 0 passes:
-  `compliancePct = 0/(0+1+0)*100 = 0` → Score 0 / Grade F. The test's expected 80/B reflects the
-  old default, not current behavior.
-- **Suggested fix** — pick ONE, depending on intent:
-  - **Option 1 (exercise penalty path explicitly)**: the test clearly wants to assert the penalty
-    formula. Change the scoring call to:
-    ```go
-    score, grade, _ := scoring.Calculate(result.Violations, result.Summary.PassCount,
-        result.Summary.IncompleteCount, scoring.FormulaPenalty)
-    // assert score==80, grade=="B"
-    ```
-    Keep `scoring.Report` only for the URL/violation-count assertions.
-  - **Option 2 (match current default)**: if the integration test should track the real default
-    pipeline, change expectations to `Score == 0`, `Grade == "F"`. Weaker assertion, but honest.
+Pick one, write the contract. **Also verify `frontend/app-v2.js` exists and exposes a render-from-JSON path before relying on "reuse."** If it doesn't, the "reuse" assumption is false and the extension needs its own minimal report view.
 
-  Recommend **Option 1** — it preserves the test's original purpose (verify penalty math through
-  the pipeline) without depending on a global default.
+### U2. "Live overlay while they work" is not deliverable under the v1 permission model
+- Manifest uses `activeTab` + `scripting` with **on-click** injection (no `content_scripts` declared).
+- True always-on overlay requires `<all_urls>` + `content_scripts` — explicitly deferred to v2 (non-goals, line 158).
 
-**Verification after fix**: `go test ./...` should be fully green.
+The plan calls the live overlay "the differentiated feature" but v1 UX is really **click → inject → overlay**. Reword so v1 is described as on-demand, and position auto-live as the v2 consequence of the deferred `<all_urls>` work. Otherwise it reads as a promised v1 feature the permissions can't deliver.
 
 ---
 
-## 4. ISSUE C — `implementation.md` reads as pending but the fix is already merged
+## SECURITY / ROBUSTNESS — mostly fine, add these
 
-**Where**: `implementation.md` is written as a task spec ("Ready for implementation", §6
-Acceptance Criteria) describing the NotAutomatable short-circuit fix as to-be-done.
+### S1. Overlay must render in a Shadow DOM, not global injected styles
+Appending highlight boxes / tooltips to `<body>` with a global `<style>` will be clobbered by or clobber host page CSS, and strict page CSP can block inline `<style>`/`<script>` in the main world.
 
-**Reality**: The fix is already in `score.go:438` (`if scMeta.NotAutomatable && !hasRule`). The
-`fsd_implementation.md` "Known Issues Found During Review (Fixed)" section already confirms it.
+- The **axe scan** itself runs in the isolated world (`chrome.scripting` world `'ISOLATED'`, CSP-exempt) — that part is fine.
+- The **overlay rendering** must be isolated: inject into a **Shadow Root** (or sandboxed iframe).
 
-**Suggestion**: Either (a) mark `implementation.md` as RESOLVED/CLOSED at top with a one-line note
-("implemented in score.go:438; verified"), or (b) delete it if it was only a planning scratch.
-Leaving a "ready for implementation" doc alongside merged code invites a double-apply or
-confusion about repo state.
+### S2. Overlay is a superset of what the report scores — state this explicitly
+Overlay runs raw axe-core (pre-WCAGMap gate). Report only scores rules present in `wcag_mapping.go` (ruleID ∉ WCAGMap → excluded, per CLAUDE.md). The plan worries about "extension said fine, report said failing" but the **more likely** confusion is the reverse: "extension flagged X, report scored nothing."
 
----
+Add one line: overlay = diagnostic superset; only WCAGMap-gated rules affect the score.
 
-## 5. ISSUE D — walkthrough.md hides the red suite
+### S3. Pin the axe-core version explicitly
+CLAUDE.md pins axe-core 4.12. Bundle that **exact** version in `vendor/axe.min.js` and keep the server on the same build so rule IDs line up. Plan currently just says "bundled axe-core" — add the explicit version pin.
 
-**Where**: `walkthrough.md` line 80-87 shows only `go test ./internal/scoring/... ./internal/report/...`
-and says "Pre-existing runner/scanner tests are isolated and unmodified" — without stating they
-FAIL.
+### S4. Rate limit is fine — acknowledge it
+All scan/score routes are 10/min per client IP (`router.go:36`, `middleware.go:53`). Overlay is client-side, so only "Get full report" hits the limit — 10 reports/min/user is plenty. No change needed; note it so a power user isn't surprised.
 
-**Suggestion**: Add a line noting `go test ./...` currently fails on the 2 scanner tests (§3 B1/B2)
-and that they must be fixed before merge, or change the documented verification command to
-`go test ./...` so the red state is visible.
+### S5. CORS forward-trap (no action now, note it)
+`corsMiddleware` (`middleware.go:41`) sets `Access-Control-Allow-Origin: *`, which accepts `chrome-extension://` origins for **non-credentialed** fetches — so no CORS change is needed for v1. BUT if you ever add `credentials: 'include'`, `*` breaks and you must switch to the specific extension origin. Note as a forward trap.
 
 ---
 
-## 6. RECOMMENDED ACTION ORDER
-
-1. **Fix B1 + B2** (Issue B) — makes `go test ./...` green; CI-safe. Highest priority.
-2. **Fix A** (doc undercount) — edit `walkthrough.md` + `fsd_implementation.md` wording.
-3. **Fix C** — close/reconcile `implementation.md`.
-4. **Fix D** — update walkthrough verification command.
-
-None require re-implementing the FSD logic. Steps 2–4 are doc-only.
+## THINGS THE PLAN GETS RIGHT (keep, do not revisit)
+- "Never accept client-computed axe as scoring input" (line 28): correct — backend signs its own JWT and re-fetches server-side; no trust path from client to score.
+- Guest-token-then-scan mirrors the existing public frontend auth surface — no new auth attack surface.
+- Web Store hygiene: bundled axe (no remote code), minimal permissions, privacy disclosure for URL transmission — all correct.
+- JWT-refresh-as-prereq for free→paid handoff correctly identified as **backend scope**, not extension scope.
 
 ---
 
-## 7. OUT OF SCOPE (noted, not for this pass)
+## SEQUENCING TWEAK
+Add **item 0** before the competitive check: confirm the hardcoded-AAA in `handler.go:68` is intentional (see B2). It affects overlay parity AND the WCAG level the report claims. Resolve before building the overlay config, not after.
 
-Per `fsd_implementation.md` "What Remains Open": native-runner JS bugs (N1–N13), axe `node_count`
-emission (§2), API SSRF/rate-limit/secret exposure (§4), config validation (§5), security
-CORS/audit-logging (§6), grade-threshold docs (§3.3). These are real but outside the FSD
-compliance-report gap scope and should be tracked separately.
+---
+
+## ACTION CHECKLIST FOR BUILD AGENT
+- [x] B1 — decide localhost report scope (public-only or ALLOW_PRIVATE_SCANS-gated); write into plan. → Resolved: public-only recommended for v1, documented as a "Known constraint" section.
+- [x] B2 — pin extension axe run to AAA; fix plan wording; raise handler.go AAA-hardcode question. → Resolved: overlay pinned to AAA, open question flagged as sequencing item 0.
+- [x] B3 — fix plan: `/api/v1/session` is GET. → Fixed throughout `chrome_implementation.md`.
+- [x] U1 — define report handoff contract (A/B/C); verify `frontend/app-v2.js` render-from-JSON path exists. → Verified `renderResults()` (app-v2.js:619) exists but has no external entry point; chose option A (`?prefill=` query param, frontend re-scans) for v1, deferred postMessage direct-render (would reuse `renderResults` without a second scan) to v2.
+- [x] U2 — reword v1 overlay as on-demand, not always-live. → Reworded; `<all_urls>` + `content_scripts` explicitly deferred.
+- [x] S1 — render overlay in Shadow DOM / sandboxed iframe. → Added as a hard requirement.
+- [x] S2 — add "overlay is superset; WCAGMap gates score" note. → Added as a required UI footnote.
+- [x] S3 — pin `vendor/axe.min.js` to axe-core 4.12. → Added.
+- [x] S5 — note CORS `*` forward-trap. → Added.
+
+---
+
+## ADDENDUM (second-pass verification, folded into `chrome_implementation.md`)
+
+Two things this review didn't check that materially change the plan:
+
+1. **The "JWT refresh prerequisite" in the original plan's sequencing was unnecessary.**
+   `frontend/app-v2.js` (`ensureToken()` / `scheduleTokenRenewal()`, lines 169-208) already handles
+   silent guest-session renewal by re-calling `GET /api/v1/session` before the cached token expires —
+   there's no dedicated `/refresh` route on the backend, just a repeat call to `/session`. The
+   extension should copy this client-side pattern instead of waiting on a backend change. This
+   removes what was previously sequencing item 2 (backend JWT refresh work) as a blocker.
+2. **U1's "reuse app-v2.js" instinct was correct but needed verification, and it's now done.**
+   `renderResults(result)` (app-v2.js:619) is a real, working render-from-JSON function — confirming
+   reuse is viable — but it has zero external entry points (no query param, no postMessage listener)
+   as of this review. The v1 handoff therefore goes through a `prefill` query param that re-triggers
+   the frontend's own `runScan()` (double-scan cost, zero new render code), with a direct-JSON
+   postMessage handoff into `renderResults` deferred to v2 if the double scan proves too slow.

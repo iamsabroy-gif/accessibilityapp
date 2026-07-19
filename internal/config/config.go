@@ -32,6 +32,9 @@ type Config struct {
 	// NEVER be used to gate actual PDF scan processing (use PDFScanningEnabled
 	// for that when Phase 1 is greenlit).
 	PDFScanningVisible bool
+	// LandingPageEnabled controls whether root (/) serves the marketing landing page
+	// vs index.html (the scan app). Default false.
+	LandingPageEnabled bool
 }
 
 // global holds the runtime configuration and is accessed concurrently.
@@ -176,6 +179,26 @@ func SetPDFScanningVisible(v bool) {
 	global.PDFScanningVisible = v
 }
 
+// GetLandingPageEnabled returns whether the marketing landing page is served at root (/).
+func GetLandingPageEnabled() bool {
+	mu.RLock()
+	defer mu.RUnlock()
+	if global == nil {
+		return false
+	}
+	return global.LandingPageEnabled
+}
+
+// SetLandingPageEnabled toggles the landing page enabled state at runtime.
+func SetLandingPageEnabled(e bool) {
+	mu.Lock()
+	defer mu.Unlock()
+	if global == nil {
+		global = &Config{}
+	}
+	global.LandingPageEnabled = e
+}
+
 // SetSecret updates the JWT secret at runtime.
 func SetSecret(newSecret string) {
 	mu.Lock()
@@ -223,6 +246,7 @@ func Load() *Config {
 		ScoringFormula:      formula,
 		ActiveEngine:        getEnv("ACTIVE_ENGINE", "native"),
 		PDFScanningVisible:  getEnvBool("PDF_SCANNING_VISIBLE", false),
+		LandingPageEnabled:  getEnvBool("LANDING_PAGE_ENABLED", false),
 	}
 }
 

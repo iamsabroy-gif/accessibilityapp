@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/webaccessibility/server/internal/config"
 	"go.uber.org/zap"
 )
 
@@ -54,6 +55,22 @@ func NewRouter(h *Handler, logger *zap.Logger) *chi.Mux {
 	// Falls back to index.html for unknown paths (SPA behaviour).
 	frontendDir := frontendPath()
 	fs := http.FileServer(http.Dir(frontendDir))
+
+	// Landing page at root (feature-flagged)
+	r.Get("/", func(w http.ResponseWriter, req *http.Request) {
+		w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
+		if config.GetLandingPageEnabled() {
+			http.ServeFile(w, req, filepath.Join(frontendDir, "landing.html"))
+			return
+		}
+		http.ServeFile(w, req, filepath.Join(frontendDir, "index.html"))
+	})
+
+	// Scan tool now lives explicitly at /app
+	r.Get("/app", func(w http.ResponseWriter, req *http.Request) {
+		w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
+		http.ServeFile(w, req, filepath.Join(frontendDir, "index.html"))
+	})
 
 	r.Get("/*", func(w http.ResponseWriter, req *http.Request) {
 		// If the file exists on disk, serve it directly.
