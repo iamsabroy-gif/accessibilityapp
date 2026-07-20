@@ -41,9 +41,9 @@ func (h *Handler) Health(w http.ResponseWriter, r *http.Request) {
 // Info handles GET /api/v1/
 func (h *Handler) Info(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"name":                  "Web Accessibility API",
-		"version":               "1.0.0",
-		"description":           "WCAG accessibility scanning API powered by axe-core",
+		"name":                 "Web Accessibility API",
+		"version":              "1.0.0",
+		"description":          "WCAG accessibility scanning API powered by axe-core",
 		"max_concurrent_scans": config.GetMaxConcurrentScans(),
 		"pdf_scanning_visible": config.GetPDFScanningVisible(),
 		"endpoints":            []string{"POST /api/v1/scan", "POST /api/v1/score", "GET  /api/v1/health", "GET  /api/v1/", "POST /api/v1/token", "POST /api/v1/secret", "GET  /api/v1/secret"},
@@ -278,6 +278,7 @@ func (h *Handler) GetSettings(w http.ResponseWriter, r *http.Request) {
 		"scoring_formula":      config.GetScoringFormula(),
 		"active_engine":        config.GetActiveEngine(),
 		"pdf_scanning_visible": config.GetPDFScanningVisible(),
+		"landing_page_enabled": config.GetLandingPageEnabled(),
 	})
 }
 
@@ -290,6 +291,8 @@ func (h *Handler) UpdateSettings(w http.ResponseWriter, r *http.Request) {
 		// PDFScanningVisible uses *bool so an explicit false is distinguishable from omitted.
 		// WARNING: This flag is UI-only. Do NOT use it to gate actual PDF scan processing.
 		PDFScanningVisible *bool `json:"pdf_scanning_visible"`
+		// LandingPageEnabled uses *bool for the same explicit-false reason.
+		LandingPageEnabled *bool `json:"landing_page_enabled"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body", err.Error())
@@ -311,11 +314,16 @@ func (h *Handler) UpdateSettings(w http.ResponseWriter, r *http.Request) {
 		config.SetPDFScanningVisible(*req.PDFScanningVisible)
 		h.Logger.Info("pdf_scanning_visible updated via API", zap.Bool("pdf_scanning_visible", *req.PDFScanningVisible))
 	}
+	if req.LandingPageEnabled != nil {
+		config.SetLandingPageEnabled(*req.LandingPageEnabled)
+		h.Logger.Info("landing_page_enabled updated via API", zap.Bool("landing_page_enabled", *req.LandingPageEnabled))
+	}
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"max_concurrent_scans": config.GetMaxConcurrentScans(),
 		"scoring_formula":      config.GetScoringFormula(),
 		"active_engine":        config.GetActiveEngine(),
 		"pdf_scanning_visible": config.GetPDFScanningVisible(),
+		"landing_page_enabled": config.GetLandingPageEnabled(),
 	})
 }
 

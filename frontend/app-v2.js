@@ -2059,6 +2059,11 @@ async function loadAdminSettings() {
     const pdfVisible = data.pdf_scanning_visible === true;
     $('pdf-visible-on')?.classList.toggle('active', pdfVisible);
     $('pdf-visible-off')?.classList.toggle('active', !pdfVisible);
+
+    // Reflect landing page toggle
+    const landingEnabled = data.landing_page_enabled === true;
+    $('landing-enabled-on')?.classList.toggle('active', landingEnabled);
+    $('landing-enabled-off')?.classList.toggle('active', !landingEnabled);
   } catch (err) {
     console.error('Failed to load settings', err);
   }
@@ -2077,6 +2082,11 @@ function toggleActiveEngine(engine) {
 function togglePDFVisibility(visible) {
   $('pdf-visible-on')?.classList.toggle('active', visible);
   $('pdf-visible-off')?.classList.toggle('active', !visible);
+}
+
+function toggleLandingEnabled(enabled) {
+  $('landing-enabled-on')?.classList.toggle('active', enabled);
+  $('landing-enabled-off')?.classList.toggle('active', !enabled);
 }
 
 function updateScanModeToggle() {
@@ -2107,6 +2117,7 @@ async function saveAllSettings() {
   const formula = $('score-formula-penalty')?.classList.contains('active') ? 'penalty' : 'compliance';
   const engine = $('engine-native')?.classList.contains('active') ? 'native' : 'axe';
   const pdfVisible = $('pdf-visible-on')?.classList.contains('active') === true;
+  const landingEnabled = $('landing-enabled-on')?.classList.contains('active') === true;
 
   btn.disabled = true;
   status.textContent = 'Saving settings...';
@@ -2123,7 +2134,8 @@ async function saveAllSettings() {
         max_concurrent_scans: maxConcurrent,
         scoring_formula: formula,
         active_engine: engine,
-        pdf_scanning_visible: pdfVisible
+        pdf_scanning_visible: pdfVisible,
+        landing_page_enabled: landingEnabled
       })
     });
     const data = await res.json();
@@ -2276,6 +2288,8 @@ document.addEventListener('DOMContentLoaded', () => {
   $('engine-native')?.addEventListener('click', () => toggleActiveEngine('native'));
   $('pdf-visible-off')?.addEventListener('click', () => togglePDFVisibility(false));
   $('pdf-visible-on')?.addEventListener('click', () => togglePDFVisibility(true));
+  $('landing-enabled-off')?.addEventListener('click', () => toggleLandingEnabled(false));
+  $('landing-enabled-on')?.addEventListener('click', () => toggleLandingEnabled(true));
   $('admin-save-all')?.addEventListener('click', saveAllSettings);
 
   $('coverage-upload-btn')?.addEventListener('click', uploadCoverageReport);
