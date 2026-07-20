@@ -2310,6 +2310,13 @@ document.addEventListener('DOMContentLoaded', () => {
   // ── Init ─────────────────────────────────────────
   setView('hero');
 
+  // Deep link: /app#coverage (e.g. from the landing page footer) opens the
+  // WCAG coverage view directly instead of the scanner hero.
+  if (window.location.hash === '#coverage') showCoverage();
+  window.addEventListener('hashchange', () => {
+    if (window.location.hash === '#coverage') showCoverage();
+  });
+
   // Restore admin session if unlocked earlier this browser session
   if (sessionStorage.getItem(LS_KEY_ADMIN_AUTH) === '1') {
     state.adminUnlocked = true;
