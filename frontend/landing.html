@@ -50,6 +50,17 @@
       transform: translateY(-1px);
       box-shadow: 0 6px 20px rgba(99,102,241,0.5);
     }
+    @media (max-width: 768px) {
+      .landing-header {
+        padding: 1rem 1.25rem;
+        gap: 0.75rem;
+      }
+      /* On small screens keep only the CTA in the nav — the anchor links
+         have no room and every section is reachable by scrolling anyway */
+      .landing-nav-links a:not(.btn-nav-cta) {
+        display: none;
+      }
+    }
 
     /* Landing Hero */
     .landing-hero {
@@ -82,7 +93,9 @@
       -webkit-text-fill-color: transparent;
     }
     @media (max-width: 768px) {
-      .landing-hero h1 { font-size: 2.25rem; }
+      .landing-hero { padding: 2.5rem 1.25rem 2rem; }
+      .landing-hero h1 { font-size: 2rem; }
+      .landing-hero .subhead { font-size: 1rem; margin-bottom: 2rem; }
     }
     .landing-hero .subhead {
       font-size: 1.15rem;
@@ -199,6 +212,11 @@
       color: var(--text-secondary);
       max-width: 680px;
       margin: 0 auto 3rem;
+    }
+    @media (max-width: 768px) {
+      .landing-section { padding: 3rem 1.25rem; }
+      .section-title { font-size: 1.6rem; }
+      .section-subtitle { font-size: 0.95rem; margin-bottom: 2rem; }
     }
 
     /* Live Preview Mockup */
@@ -320,6 +338,12 @@
       border-radius: 6px;
       border: 1px solid rgba(99,102,241,0.2);
     }
+    @media (max-width: 768px) {
+      .preview-card { padding: 1.25rem; }
+      .preview-meta { flex-wrap: wrap; gap: 0.35rem 1rem; }
+      .preview-url { font-size: 1rem; word-break: break-all; }
+      .preview-stats-row { gap: 1rem; margin-bottom: 1.5rem; }
+    }
 
     /* Dual Score Grid */
     .dual-score-grid {
@@ -328,7 +352,8 @@
       gap: 2rem;
     }
     @media (max-width: 768px) {
-      .dual-score-grid { grid-template-columns: 1fr; }
+      .dual-score-grid { grid-template-columns: 1fr; gap: 1.25rem; }
+      .score-card { padding: 1.5rem; }
     }
     .score-card {
       background: var(--bg-surface);
@@ -380,7 +405,8 @@
       gap: 2rem;
     }
     @media (max-width: 768px) {
-      .steps-grid { grid-template-columns: 1fr; }
+      .steps-grid { grid-template-columns: 1fr; gap: 1.25rem; }
+      .step-card { padding: 1.5rem; }
     }
     .step-card {
       background: var(--bg-card);
@@ -431,6 +457,11 @@
       display: block;
       margin-bottom: 0.35rem;
     }
+    @media (max-width: 768px) {
+      /* Two compact columns instead of one long single-column list */
+      .compliance-grid { grid-template-columns: repeat(2, 1fr); gap: 0.75rem; }
+      .compliance-badge-item { font-size: 0.82rem; padding: 0.85rem 0.5rem; }
+    }
     .highlight-tag {
       position: absolute;
       top: -8px;
@@ -455,8 +486,14 @@
       gap: 2.5rem;
       align-items: center;
     }
+    .ci-title {
+      font-size: 1.85rem;
+      font-weight: 700;
+      margin-bottom: 1rem;
+    }
     @media (max-width: 850px) {
-      .ci-card { grid-template-columns: 1fr; }
+      .ci-card { grid-template-columns: 1fr; padding: 2rem 1.25rem; gap: 1.75rem; }
+      .ci-title { font-size: 1.5rem; }
     }
     .ci-code-block {
       background: #040711;
@@ -480,9 +517,18 @@
     }
     .footer-links {
       display: flex;
+      flex-wrap: wrap;
       justify-content: center;
-      gap: 2rem;
+      gap: 1rem 2rem;
       margin-bottom: 1.5rem;
+    }
+    .final-cta-title {
+      font-size: 2.25rem;
+      font-weight: 800;
+      margin-bottom: 1rem;
+    }
+    @media (max-width: 768px) {
+      .final-cta-title { font-size: 1.6rem; }
     }
     .footer-links a {
       color: var(--text-secondary);
@@ -724,7 +770,7 @@
   <section id="ci-cd" class="landing-section" aria-label="CI integration">
     <div class="ci-card">
       <div>
-        <h2 style="font-size: 1.85rem; font-weight: 700; margin-bottom: 1rem;">Gate your builds on accessibility</h2>
+        <h2 class="ci-title">Gate your builds on accessibility</h2>
         <p style="color: var(--text-secondary); line-height: 1.6; margin-bottom: 0.75rem;">
           63 automated WCAG 2.1/2.2 checks that run entirely inside your CI runner — no hosted API, no auth, no account. Fail builds on severity thresholds, surface violations as inline PR annotations via SARIF.
         </p>
@@ -763,7 +809,7 @@
 
   <!-- FINAL HERO CTA -->
   <section class="landing-hero" style="padding-top: 2rem; padding-bottom: 5rem;" aria-label="Start scanning CTA">
-    <h2 style="font-size: 2.25rem; font-weight: 800; margin-bottom: 1rem;">Ready to test your website's accessibility?</h2>
+    <h2 class="final-cta-title">Ready to test your website's accessibility?</h2>
     <p class="subhead" style="margin-bottom: 2rem;">No registration required. Free instant scan in 30 seconds.</p>
 
     <div>
