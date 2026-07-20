@@ -25,8 +25,8 @@ type Config struct {
 	// ScoringFormula controls how the 0-100 score is computed.
 	// "compliance" (default) = round(passCount / total * 100)
 	// "penalty"              = max(0, 100 - Σ impactPenalty)
-	ScoringFormula     string
-	ActiveEngine       string // "axe" or "native"
+	ScoringFormula string
+	ActiveEngine   string // "axe" or "native"
 	// PDFScanningVisible controls whether the "PDF scanning — coming soon" UI card
 	// is revealed in the main app. This is a UI-visibility flag ONLY — it must
 	// NEVER be used to gate actual PDF scan processing (use PDFScanningEnabled
@@ -242,11 +242,11 @@ func Load() *Config {
 		NodeBin:            getEnv("NODE_BIN", "node"),
 		AxeRunnerScript:    getEnv("AXE_RUNNER_SCRIPT", "scripts/axe_runner.js"),
 		NativeRunnerScript: getEnv("NATIVE_RUNNER_SCRIPT", "scripts/native_runner.js"),
-		AllowPrivateScans:   getEnvBool("ALLOW_PRIVATE_SCANS", false),
-		ScoringFormula:      formula,
-		ActiveEngine:        getEnv("ACTIVE_ENGINE", "native"),
-		PDFScanningVisible:  getEnvBool("PDF_SCANNING_VISIBLE", false),
-		LandingPageEnabled:  getEnvBool("LANDING_PAGE_ENABLED", false),
+		AllowPrivateScans:  getEnvBool("ALLOW_PRIVATE_SCANS", false),
+		ScoringFormula:     formula,
+		ActiveEngine:       getEnv("ACTIVE_ENGINE", "native"),
+		PDFScanningVisible: getEnvBool("PDF_SCANNING_VISIBLE", false),
+		LandingPageEnabled: getEnvBool("LANDING_PAGE_ENABLED", false),
 	}
 }
 

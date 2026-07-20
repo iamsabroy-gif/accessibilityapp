@@ -658,6 +658,15 @@
         <p class="field-hint">Internal only: reveals the &ldquo;PDF scanning &mdash; coming soon / request early access&rdquo; card in the main UI for sales demos. No PDF scanning backend exists; this is visibility-only.</p>
       </div>
 
+      <div class="admin-toggle-section" style="margin-top: 1rem;">
+        <label class="form-label">Landing Page at Root</label>
+        <div class="toggle-row">
+          <button id="landing-enabled-off" class="toggle-btn active" type="button" data-landing="off">Scan App</button>
+          <button id="landing-enabled-on" class="toggle-btn" type="button" data-landing="on">Landing Page</button>
+        </div>
+        <p class="field-hint">Controls what <code>/</code> serves: the marketing landing page or the scan app directly. The scan app always remains available at <code>/app</code>. Reverts to the <code>LANDING_PAGE_ENABLED</code> env value on server restart.</p>
+      </div>
+
       <div class="admin-toggle-section" style="margin-top: 1.5rem; text-align: right;">
         <p id="admin-overall-status" class="upload-status" role="status" aria-live="polite" style="margin-bottom: 8px; text-align: left;"></p>
         <button id="admin-save-all" class="modal-btn-primary" type="button" style="width: 100%;">Save Settings</button>
