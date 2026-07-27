@@ -2,7 +2,9 @@ package api
 
 import (
 	"context"
+	"crypto/rand"
 	"crypto/subtle"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -10,6 +12,7 @@ import (
 	"net/url"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/golang-jwt/jwt/v4"
@@ -23,6 +26,12 @@ import (
 	"sync/atomic"
 )
 
+// reportCacheEntry holds a cached scan result with expiry.
+type reportCacheEntry struct {
+	Result    *models.ScanResult
+	ExpiresAt time.Time
+}
+
 // Handler holds shared dependencies for all route handlers.
 type Handler struct {
 	Scanner     scanner.Scanner
@@ -31,6 +40,10 @@ type Handler struct {
 	ScanTimeout time.Duration
 	Coverage    *coverage.Store
 	activeScans int32
+
+	// In-memory report cache for extension "View Detailed Report" links.
+	reportCacheMu sync.Mutex
+	reportCache   map[string]reportCacheEntry
 }
 
 // Health handles GET /api/v1/health
@@ -97,6 +110,131 @@ func (h *Handler) Scan(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	writeJSON(w, http.StatusOK, result)
+}
+
+// ScanClient handles POST /api/v1/scan/client to ingest client-side scan results from Chrome extension.
+func (h *Handler) ScanClient(w http.ResponseWriter, r *http.Request) {
+	start := time.Now()
+
+	// Limit request body to 10MB
+	r.Body = http.MaxBytesReader(w, r.Body, 10<<20)
+
+	var raw scanner.AxeRawResult
+	if err := json.NewDecoder(r.Body).Decode(&raw); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body", err.Error())
+		return
+	}
+
+	if raw.URL == "" {
+		writeError(w, http.StatusBadRequest, "url is required", "")
+		return
+	}
+
+	if err := validateURL(raw.URL); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid url", err.Error())
+		return
+	}
+
+	// Payload bounds validation for untrusted extension input
+	if len(raw.Violations) > 1000 {
+		writeError(w, http.StatusBadRequest, "too many violations in payload", "max 1000 violations allowed")
+		return
+	}
+	for i := range raw.Violations {
+		if len(raw.Violations[i].Nodes) > 1000 {
+			writeError(w, http.StatusBadRequest, "too many violation nodes in payload", "max 1000 nodes per violation allowed")
+			return
+		}
+		for j := range raw.Violations[i].Nodes {
+			if len(raw.Violations[i].Nodes[j].HTML) > 10000 {
+				raw.Violations[i].Nodes[j].HTML = raw.Violations[i].Nodes[j].HTML[:10000]
+			}
+		}
+	}
+
+	r.Header.Set("X-Scan-URL", raw.URL)
+	h.Logger.Info("ingesting client scan result", zap.String("url", raw.URL), zap.Int("violations", len(raw.Violations)))
+
+	durationMs := time.Since(start).Milliseconds()
+	result := scanner.MapToScanResult(raw, raw.URL, "AAA", durationMs)
+
+	// Store in report cache so the extension can open a detailed report in the web app
+	reportID := h.storeReport(result)
+	h.Logger.Info("stored extension report", zap.String("report_id", reportID), zap.String("url", raw.URL))
+
+	// Wrap in envelope that includes report_id for the extension
+	envelope := struct {
+		ReportID string `json:"report_id"`
+		models.ScanResult
+	}{
+		ReportID:   reportID,
+		ScanResult: *result,
+	}
+	writeJSON(w, http.StatusOK, envelope)
+}
+
+// storeReport saves a ScanResult in the in-memory cache and returns a unique ID.
+// Entries expire after 30 minutes. Cache is capped at 200 entries (oldest evicted first).
+func (h *Handler) storeReport(result *models.ScanResult) string {
+	b := make([]byte, 12)
+	_, _ = rand.Read(b)
+	id := hex.EncodeToString(b)
+
+	h.reportCacheMu.Lock()
+	defer h.reportCacheMu.Unlock()
+
+	if h.reportCache == nil {
+		h.reportCache = make(map[string]reportCacheEntry)
+	}
+
+	// Evict expired entries
+	now := time.Now()
+	for k, v := range h.reportCache {
+		if now.After(v.ExpiresAt) {
+			delete(h.reportCache, k)
+		}
+	}
+
+	// Cap at 200 — evict oldest if needed
+	if len(h.reportCache) >= 200 {
+		var oldestKey string
+		var oldestTime time.Time
+		for k, v := range h.reportCache {
+			if oldestKey == "" || v.ExpiresAt.Before(oldestTime) {
+				oldestKey = k
+				oldestTime = v.ExpiresAt
+			}
+		}
+		delete(h.reportCache, oldestKey)
+	}
+
+	h.reportCache[id] = reportCacheEntry{
+		Result:    result,
+		ExpiresAt: now.Add(30 * time.Minute),
+	}
+	return id
+}
+
+// GetReport handles GET /api/v1/report/{id} — returns a cached scan result by ID.
+func (h *Handler) GetReport(w http.ResponseWriter, r *http.Request) {
+	// Extract report ID from the URL path: /api/v1/report/{id}
+	path := strings.TrimPrefix(r.URL.Path, "/api/v1/report/")
+	id := strings.TrimSpace(path)
+	if id == "" {
+		writeError(w, http.StatusBadRequest, "report id is required", "")
+		return
+	}
+
+	h.reportCacheMu.Lock()
+	entry, ok := h.reportCache[id]
+	h.reportCacheMu.Unlock()
+
+	if !ok || time.Now().After(entry.ExpiresAt) {
+		writeError(w, http.StatusNotFound, "report not found or expired", "")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, entry.Result)
 }
 
 // GenerateToken handles POST /api/v1/token to issue a JWT.

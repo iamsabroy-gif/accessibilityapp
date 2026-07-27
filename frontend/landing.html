@@ -507,6 +507,63 @@
       overflow-x: auto;
     }
 
+    /* Extension Section */
+    .extension-card {
+      background: linear-gradient(135deg, rgba(15,23,42,0.95) 0%, rgba(30,41,59,0.95) 100%);
+      border: 1px solid var(--border-accent);
+      border-radius: var(--radius-lg);
+      padding: 3rem 2.5rem;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 3rem;
+      align-items: center;
+      box-shadow: 0 20px 40px rgba(0,0,0,0.4);
+    }
+    @media (max-width: 850px) {
+      .extension-card { grid-template-columns: 1fr; padding: 2rem 1.5rem; }
+    }
+    .extension-features-list {
+      list-style: none;
+      padding: 0;
+      margin: 1.5rem 0 2rem;
+      display: flex;
+      flex-direction: column;
+      gap: 1rem;
+    }
+    .extension-features-list li {
+      display: flex;
+      align-items: flex-start;
+      gap: 12px;
+      color: var(--text-secondary);
+      font-size: 0.95rem;
+      line-height: 1.5;
+    }
+    .extension-features-list li strong {
+      color: var(--text-primary);
+    }
+    .extension-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 12px;
+      background: rgba(99,102,241,0.15);
+      border: 1px solid var(--border-accent);
+      border-radius: var(--radius-full);
+      color: #818cf8;
+      font-size: 0.8rem;
+      font-weight: 700;
+      margin-bottom: 1rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    .extension-mockup {
+      background: #0f172a;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      padding: 1.5rem;
+      box-shadow: 0 12px 30px rgba(0,0,0,0.6);
+    }
+
     /* Footer */
     .landing-footer {
       border-top: 1px solid var(--border);
@@ -551,6 +608,7 @@
     </div>
     <nav class="landing-nav-links" aria-label="Main navigation">
       <a href="#features">Features</a>
+      <a href="#chrome-extension">Chrome Extension</a>
       <a href="#dual-scoring">Dual Scoring</a>
       <a href="#compliance">Compliance</a>
       <a href="#ci-cd">CI/CD Integration</a>
@@ -581,9 +639,9 @@
     </div>
 
     <div class="feature-chips">
+      <div class="chip-item"><span>🧩</span> Live Tab &amp; SPA Chrome Extension</div>
       <div class="chip-item"><span>🎯</span> Proprietary Detection Engine</div>
-      <div class="chip-item"><span>📋</span> 63 rules across 43 WCAG 2.1 A/AA criteria</div>
-      <div class="chip-item"><span>🔍</span> 22 custom validation checks</div>
+      <div class="chip-item"><span>📋</span> 73 rules across WCAG 2.1/2.2 A/AA criteria</div>
       <div class="chip-item"><span>🛠️</span> Per-element DOM fix suggestions</div>
     </div>
   </section>
@@ -762,6 +820,91 @@
       <div class="compliance-badge-item">
         <span class="flag-icon">🇩🇪</span>
         BITV 2.0
+      </div>
+    </div>
+  </section>
+
+  <!-- CHROME EXTENSION SECTION -->
+  <section id="chrome-extension" class="landing-section" aria-label="Chrome Extension">
+    <div class="extension-card">
+      <div>
+        <div class="extension-badge">🧩 Chrome Extension</div>
+        <h2 style="font-size: 2.2rem; font-weight: 800; margin-bottom: 1rem; line-height: 1.2;">
+          Audit live tabs, SPAs &amp; local apps in 1 click
+        </h2>
+        <p style="color: var(--text-secondary); line-height: 1.6; font-size: 1.05rem;">
+          Run our client-side native accessibility engine directly inside your browser tabs. Audit authenticated pages, complex single-page apps (React, Vue, Angular), and local development servers (<code>http://localhost</code>).
+        </p>
+
+        <ul class="extension-features-list">
+          <li>
+            <span style="font-size: 1.2rem;">⚡</span>
+            <div><strong>Client-Side Native Engine:</strong> Evaluates 73 WCAG rules directly inside the browser DOM with zero network latency.</div>
+          </li>
+          <li>
+            <span style="font-size: 1.2rem;">🔒</span>
+            <div><strong>Authenticated &amp; Internal Pages:</strong> Test live user sessions, behind-paywall pages, and local dev environments effortlessly.</div>
+          </li>
+          <li>
+            <span style="font-size: 1.2rem;">📊</span>
+            <div><strong>1-Click Detailed Reports:</strong> Generate instant visual reports and open deep-linked remediation guidance directly in the web dashboard.</div>
+          </li>
+        </ul>
+
+        <div style="display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 1.25rem;">
+          <a href="/web-accessibility-scanner.zip" download class="btn-nav-cta" style="padding: 0.8rem 1.6rem; font-size: 0.95rem;">
+            Download Extension (.zip) →
+          </a>
+          <a href="/app" class="btn-hero-cta" style="padding: 0.8rem 1.6rem; font-size: 0.95rem; background: rgba(255,255,255,0.05); border: 1px solid var(--border);">
+            Open Scanner App →
+          </a>
+        </div>
+
+        <div style="background: rgba(255,255,255,0.03); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 1rem 1.25rem; font-size: 0.85rem; color: var(--text-secondary);">
+          <div style="font-weight: 700; color: var(--text-primary); margin-bottom: 0.4rem; display: flex; align-items: center; gap: 6px;">
+            <span>🛠️</span> 30-Second Chrome Installation Guide:
+          </div>
+          <ol style="margin-left: 1.2rem; padding: 0; display: flex; flex-direction: column; gap: 4px; line-height: 1.4;">
+            <li>Unzip <code>web-accessibility-scanner.zip</code> on your computer.</li>
+            <li>Open Chrome and navigate to <code>chrome://extensions/</code></li>
+            <li>Enable <strong>Developer mode</strong> (top-right) → click <strong>Load unpacked</strong> → select the unzipped folder.</li>
+          </ol>
+        </div>
+      </div>
+
+      <div class="extension-mockup">
+        <div style="display: flex; align-items: center; justify-content: space-between; padding-bottom: 12px; margin-bottom: 16px; border-bottom: 1px solid var(--border);">
+          <div style="display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: 0.95rem;">
+            <div style="width: 22px; height: 22px; background: linear-gradient(135deg, #6366f1, #a855f7); border-radius: 5px; display: flex; align-items: center; justify-content: center; font-size: 11px; color: white;">A</div>
+            <span>Accessibility Scanner</span>
+          </div>
+          <span style="font-size: 0.75rem; color: #10b981; background: rgba(16,185,129,0.15); padding: 2px 8px; border-radius: 10px; font-weight: 600;">v1.0.0</span>
+        </div>
+
+        <div style="background: var(--bg-card); border: 1px solid var(--border); border-radius: 10px; padding: 14px; text-align: center; margin-bottom: 14px;">
+          <div style="font-size: 2.2rem; font-weight: 800; color: #10b981; line-height: 1;">94</div>
+          <div style="display: inline-block; padding: 2px 10px; border-radius: 10px; font-weight: 700; font-size: 11px; background: rgba(16,185,129,0.2); color: #10b981; margin: 6px 0 4px;">Grade A</div>
+          <div style="font-size: 0.8rem; color: var(--text-secondary);">96.8% Compliance</div>
+        </div>
+
+        <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 16px;">
+          <div style="background: var(--bg-card); border: 1px solid var(--border); border-radius: 6px; padding: 8px; text-align: center;">
+            <div style="font-size: 1rem; font-weight: 700; color: #ef4444;">2</div>
+            <div style="font-size: 0.7rem; color: var(--text-secondary);">Violations</div>
+          </div>
+          <div style="background: var(--bg-card); border: 1px solid var(--border); border-radius: 6px; padding: 8px; text-align: center;">
+            <div style="font-size: 1rem; font-weight: 700; color: #10b981;">68</div>
+            <div style="font-size: 0.7rem; color: var(--text-secondary);">Passes</div>
+          </div>
+          <div style="background: var(--bg-card); border: 1px solid var(--border); border-radius: 6px; padding: 8px; text-align: center;">
+            <div style="font-size: 1rem; font-weight: 700; color: #f59e0b;">3</div>
+            <div style="font-size: 0.7rem; color: var(--text-secondary);">Incomplete</div>
+          </div>
+        </div>
+
+        <div style="display: block; width: 100%; padding: 10px; border-radius: 6px; border: 1px solid #6366f1; background: rgba(99,102,241,0.15); color: #818cf8; font-weight: 600; font-size: 0.8rem; text-align: center;">
+          View Detailed Report →
+        </div>
       </div>
     </div>
   </section>

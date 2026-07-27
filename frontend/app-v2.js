@@ -9,7 +9,7 @@
  */
 
 // ─── Constants ────────────────────────────────────────────────
-const DEFAULT_API_BASE  = 'https://accessibilityapp-bxzn.onrender.com';
+const DEFAULT_API_BASE  = 'https://www.accessscan.in';
 const LS_KEY_TOKEN      = 'wacs_token';
 const LS_KEY_TOKEN_EXP  = 'wacs_token_exp';
 const LS_KEY_ADMIN_AUTH = 'wacs_admin_authed'; // flag: admin is unlocked this session
@@ -2358,6 +2358,35 @@ document.addEventListener('DOMContentLoaded', () => {
         scanBtn.disabled = false;
       }
     });
+  }
+
+  // Extension report deep-link: ?report=<id>
+  // When Chrome extension opens /app?report=<id>, fetch and render the full detailed report
+  const reportId = urlParams.get('report');
+  if (reportId) {
+    const cleanPath = window.location.pathname.endsWith('/app') ? window.location.pathname : '/app';
+    window.history.replaceState(null, '', cleanPath);
+
+    setView('loading');
+    (async function loadExtensionReport() {
+      try {
+        const res = await fetch(`${apiBase()}/api/v1/report/${encodeURIComponent(reportId)}`);
+        if (!res.ok) {
+          const errData = await res.json().catch(() => ({}));
+          throw new Error(errData.error || 'Report not found or expired');
+        }
+        const data = await res.json();
+        state.scanResult = data;
+        if (!data.embedded_results) data.embedded_results = [];
+        renderResults(data);
+        setView('results');
+        setDownloadButtonsDisabled(false);
+        revealScreenshotSection(data);
+      } catch (err) {
+        showError(`Could not load extension report: ${err.message}`);
+        setView('hero');
+      }
+    })();
   }
 });
 

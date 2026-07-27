@@ -5,7 +5,8 @@
   "main": "index.js",
   "scripts": {
     "test": "jest --verbose",
-    "test:wcag122": "jest scripts/wcag122_captions.test.js --verbose"
+    "test:wcag122": "jest scripts/wcag122_captions.test.js --verbose",
+    "build:extension": "node scripts/build-extension-engine.js"
   },
   "jest": {
     "testEnvironment": "jsdom",

@@ -242,11 +242,11 @@ func Load() *Config {
 		NodeBin:            getEnv("NODE_BIN", "node"),
 		AxeRunnerScript:    getEnv("AXE_RUNNER_SCRIPT", "scripts/axe_runner.js"),
 		NativeRunnerScript: getEnv("NATIVE_RUNNER_SCRIPT", "scripts/native_runner.js"),
-		AllowPrivateScans:  getEnvBool("ALLOW_PRIVATE_SCANS", false),
-		ScoringFormula:     formula,
-		ActiveEngine:       getEnv("ACTIVE_ENGINE", "native"),
-		PDFScanningVisible: getEnvBool("PDF_SCANNING_VISIBLE", false),
-		LandingPageEnabled: getEnvBool("LANDING_PAGE_ENABLED", false),
+		AllowPrivateScans:   getEnvBool("ALLOW_PRIVATE_SCANS", false),
+		ScoringFormula:      formula,
+		ActiveEngine:        getEnv("ACTIVE_ENGINE", "native"),
+		PDFScanningVisible:  getEnvBool("PDF_SCANNING_VISIBLE", false),
+		LandingPageEnabled:  getEnvBool("LANDING_PAGE_ENABLED", true),
 	}
 }
 

@@ -1,0 +1,32 @@
+{
+  "manifest_version": 3,
+  "name": "Web Accessibility Scanner",
+  "version": "1.0.0",
+  "description": "Scan live, authenticated, and local web pages for WCAG 2.1 accessibility violations using the native accessibility engine.",
+  "permissions": [
+    "activeTab",
+    "scripting",
+    "storage"
+  ],
+  "host_permissions": [
+    "http://*/*",
+    "https://*/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "icons": {
+    "16": "icons/icon-16.png",
+    "48": "icons/icon-48.png",
+    "128": "icons/icon-128.png"
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Scan Page Accessibility",
+    "default_icon": {
+      "16": "icons/icon-16.png",
+      "48": "icons/icon-48.png",
+      "128": "icons/icon-128.png"
+    }
+  }
+}

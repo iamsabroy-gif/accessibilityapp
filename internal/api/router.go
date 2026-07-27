@@ -24,6 +24,7 @@ func NewRouter(h *Handler, logger *zap.Logger) *chi.Mux {
 		r.Get("/health", h.Health)
 		r.Get("/session", h.Session)                   // public: auto-issues JWT to any visitor
 		r.Post("/admin/verify", h.VerifyAdminPassword) // public: verifies admin password
+		r.Get("/report/*", h.GetReport)                // public: fetch cached extension scan results
 		r.Post("/admin/coverage", adminAuthMiddleware(h.UploadCoverageReport))
 		r.Get("/admin/settings", adminAuthMiddleware(h.GetSettings))
 		r.Post("/admin/settings", adminAuthMiddleware(h.UpdateSettings))
@@ -36,6 +37,7 @@ func NewRouter(h *Handler, logger *zap.Logger) *chi.Mux {
 		r.Group(func(r chi.Router) {
 			r.Use(rateLimitMiddleware())
 			r.Post("/scan", jwtAuthMiddleware(h.Scan))
+			r.Post("/scan/client", jwtAuthMiddleware(h.ScanClient))
 			r.Post("/score", jwtAuthMiddleware(h.ScoreOnly))
 			r.Post("/report/ada", jwtAuthMiddleware(h.ReportADA))
 			r.Post("/report/vpat", jwtAuthMiddleware(h.ReportVPAT))

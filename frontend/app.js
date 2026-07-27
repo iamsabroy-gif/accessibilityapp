@@ -9,7 +9,7 @@
  */
 
 // ─── Constants ────────────────────────────────────────────────
-const DEFAULT_API_BASE  = 'https://accessibilityapp-bxzn.onrender.com';
+const DEFAULT_API_BASE  = 'https://www.accessscan.in';
 const LS_KEY_TOKEN      = 'wacs_token';
 const LS_KEY_TOKEN_EXP  = 'wacs_token_exp';
 const LS_KEY_ADMIN_AUTH = 'wacs_admin_authed'; // flag: admin is unlocked this session
@@ -2000,6 +2000,37 @@ document.addEventListener('DOMContentLoaded', () => {
   ensureToken().then(ok => {
     if (ok) scheduleTokenRenewal();
   });
+
+  // ── Extension report deep-link: ?report=<id> ─────
+  // When the Chrome extension opens /app?report=<id>, auto-fetch and display the report.
+  (async function loadExtensionReport() {
+    const params = new URLSearchParams(window.location.search);
+    const reportId = params.get('report');
+    if (!reportId) return;
+
+    setView('loading');
+    try {
+      const res = await fetch(`${apiBase()}/api/v1/report/${encodeURIComponent(reportId)}`);
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.error || 'Report not found or expired');
+      }
+      const data = await res.json();
+      state.scanResult = data;
+      data.embedded_results = data.embedded_results || [];
+      renderResults(data);
+      setView('results');
+      setDownloadButtonsDisabled(false);
+      revealScreenshotSection(data);
+
+      // Clean up URL so a page refresh doesn't re-fetch an expired report
+      const cleanUrl = window.location.pathname;
+      window.history.replaceState({}, document.title, cleanUrl);
+    } catch (err) {
+      showError(`Could not load extension report: ${err.message}`);
+      setView('hero');
+    }
+  })();
 });
 
 

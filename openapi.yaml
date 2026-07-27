@@ -216,6 +216,63 @@ paths:
         "500":
           $ref: "#/components/responses/InternalError"
 
+  # ── SCAN CLIENT ─────────────────────────────────────────────────────────────
+  /scan/client:
+    post:
+      tags: [Scan]
+      summary: Ingest client-scanned accessibility results from Chrome extension
+      description: |
+        Ingests client-evaluated rule results from the Chrome Extension's native engine,
+        calculates penalty and AudioEye scores, and returns a canonical `ScanResult`.
+        Does not perform server-side page navigation or SSRF checks, enabling audits of
+        authenticated tabs and local environment pages (`localhost`).
+      operationId: postScanClient
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [url, violations, passes, incomplete]
+              properties:
+                url:
+                  type: string
+                violations:
+                  type: array
+                  items:
+                    type: object
+                passes:
+                  type: array
+                  items:
+                    type: object
+                incomplete:
+                  type: array
+                  items:
+                    type: object
+                links:
+                  type: array
+                  items:
+                    type: string
+                screenshot:
+                  type: string
+      responses:
+        "200":
+          description: Client scan ingested and scored successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ScanResult"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
   # ── SCORE ──────────────────────────────────────────────────────────────────
   /score:
     post:

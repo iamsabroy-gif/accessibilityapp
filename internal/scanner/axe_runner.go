@@ -16,43 +16,43 @@ import (
 	"strings"
 )
 
-// axeRawResult mirrors the raw JSON output from axe_runner.js.
-type axeRawResult struct {
+// AxeRawResult mirrors the raw JSON output from axe_runner.js or client-side native engine.
+type AxeRawResult struct {
 	URL        string         `json:"url"`
-	Violations []axeViolation `json:"violations"`
-	Passes     []axeRule      `json:"passes"`
-	Incomplete []axeRule      `json:"incomplete"`
+	Violations []AxeViolation `json:"violations"`
+	Passes     []AxeRule      `json:"passes"`
+	Incomplete []AxeRule      `json:"incomplete"`
 	Error      string         `json:"error,omitempty"`
 	Links      []string       `json:"links,omitempty"`
 	Screenshot string         `json:"screenshot,omitempty"`
 }
 
-type axeViolation struct {
+type AxeViolation struct {
 	ID             string    `json:"id"`
 	Impact         string    `json:"impact"`
 	Description    string    `json:"description"`
 	Help           string    `json:"help"`
 	HelpURL        string    `json:"helpUrl"`
 	Tags           []string  `json:"tags"`
-	Nodes          []axeNode `json:"nodes"`
+	Nodes          []AxeNode `json:"nodes"`
 	ViolationIndex int       `json:"violationIndex,omitempty"`
 }
 
-type axeNode struct {
+type AxeNode struct {
 	HTML           string   `json:"html"`
 	Target         []string `json:"target"`
 	FailureSummary string   `json:"failureSummary"`
-	BBox           *axeBBox `json:"bbox,omitempty"`
+	BBox           *AxeBBox `json:"bbox,omitempty"`
 }
 
-type axeBBox struct {
+type AxeBBox struct {
 	X      int `json:"x"`
 	Y      int `json:"y"`
 	Width  int `json:"width"`
 	Height int `json:"height"`
 }
 
-type axeRule struct {
+type AxeRule struct {
 	ID          string `json:"id"`
 	Description string `json:"description"`
 	NodeCount   int    `json:"nodeCount"`
@@ -102,7 +102,7 @@ func (a *AxeRunner) Scan(ctx context.Context, url string, wcagLevel string, dept
 		return nil, fmt.Errorf("axe runner failed: %s", string(output))
 	}
 
-	var raw axeRawResult
+	var raw AxeRawResult
 	if err := json.Unmarshal(output, &raw); err != nil {
 		return nil, fmt.Errorf("failed to parse axe output: %w", err)
 	}
@@ -111,7 +111,7 @@ func (a *AxeRunner) Scan(ctx context.Context, url string, wcagLevel string, dept
 	}
 
 	// Map base result
-	result := mapToScanResult(raw, url, wcagLevel, time.Since(start).Milliseconds())
+	result := MapToScanResult(raw, url, wcagLevel, time.Since(start).Milliseconds())
 
 	// If depth == 1, return discovered links for frontend-driven parallel scanning
 	if depth == 1 && len(raw.Links) > 0 {
@@ -146,8 +146,8 @@ func (a *AxeRunner) Scan(ctx context.Context, url string, wcagLevel string, dept
 
 }
 
-// mapToScanResult converts raw axe output into our canonical ScanResult model.
-func mapToScanResult(raw axeRawResult, url, wcagLevel string, durationMs int64) *models.ScanResult {
+// MapToScanResult converts raw axe or native engine output into our canonical ScanResult model.
+func MapToScanResult(raw AxeRawResult, url, wcagLevel string, durationMs int64) *models.ScanResult {
 
 	// mapGuidelines converts a slice of axe rule IDs into a deduped, sorted list of WCAG 2.1 criterion numbers.
 	mapGuidelines := func(ids []string) []string {

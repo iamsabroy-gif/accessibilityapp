@@ -22,10 +22,10 @@ import (
 // Helpers
 // ─────────────────────────────────────────────────────────────────────────────
 
-// makeRaw builds a minimal axeRawResult containing only the supplied violations
+// makeRaw builds a minimal AxeRawResult containing only the supplied violations
 // and passes.  All other fields are left at their zero values.
-func makeRaw(url string, violations []axeViolation, passes []axeRule) axeRawResult {
-	return axeRawResult{
+func makeRaw(url string, violations []AxeViolation, passes []AxeRule) AxeRawResult {
+	return AxeRawResult{
 		URL:        url,
 		Violations: violations,
 		Passes:     passes,
@@ -33,17 +33,17 @@ func makeRaw(url string, violations []axeViolation, passes []axeRule) axeRawResu
 	}
 }
 
-// violation122 returns an axeViolation with the given rule ID and critical
+// violation122 returns an AxeViolation with the given rule ID and critical
 // impact, matching what the JS custom check emits for SC 1.2.2.
-func violation122(id, impact string) axeViolation {
-	return axeViolation{
+func violation122(id, impact string) AxeViolation {
+	return AxeViolation{
 		ID:          id,
 		Impact:      impact,
 		Description: "WCAG 1.2.2 test violation",
 		Help:        "Add captions",
 		HelpURL:     "https://www.w3.org/WAI/WCAG21/Techniques/html/H95",
 		Tags:        []string{"wcag122", "cat.time-and-media"},
-		Nodes: []axeNode{{
+		Nodes: []AxeNode{{
 			HTML:           `<video src="film.mp4"></video>`,
 			Target:         []string{"video"},
 			FailureSummary: "No <track kind=\"captions\"> found.",
@@ -51,9 +51,9 @@ func violation122(id, impact string) axeViolation {
 	}
 }
 
-// pass122 returns an axeRule representing a 1.2.2 pass event.
-func pass122() axeRule {
-	return axeRule{
+// pass122 returns an AxeRule representing a 1.2.2 pass event.
+func pass122() AxeRule {
+	return AxeRule{
 		ID:          "video-captions-present",
 		Description: `Video has a valid caption track (kind="captions", srclang="en").`,
 	}
@@ -138,10 +138,10 @@ func TestWCAGMap_122_ExistingRulesDoNotClaimSC122(t *testing.T) {
 func TestMapToScanResult_122_ViolationGuidelines(t *testing.T) {
 	t.Parallel()
 	raw := makeRaw("https://example.com",
-		[]axeViolation{violation122("video-captions-present", "critical")},
+		[]AxeViolation{violation122("video-captions-present", "critical")},
 		nil,
 	)
-	result := mapToScanResult(raw, "https://example.com", "AA", 100)
+	result := MapToScanResult(raw, "https://example.com", "AA", 100)
 	if !containsString(result.ViolationGuidelines, "1.2.2") {
 		t.Errorf("ViolationGuidelines = %v; want it to include '1.2.2'", result.ViolationGuidelines)
 	}
@@ -151,25 +151,25 @@ func TestMapToScanResult_122_ViolationGuidelines(t *testing.T) {
 // in PassGuidelines after mapping.
 func TestMapToScanResult_122_PassGuidelines(t *testing.T) {
 	t.Parallel()
-	raw := makeRaw("https://example.com", nil, []axeRule{pass122()})
-	result := mapToScanResult(raw, "https://example.com", "AA", 100)
+	raw := makeRaw("https://example.com", nil, []AxeRule{pass122()})
+	result := MapToScanResult(raw, "https://example.com", "AA", 100)
 	if !containsString(result.PassGuidelines, "1.2.2") {
 		t.Errorf("PassGuidelines = %v; want it to include '1.2.2'", result.PassGuidelines)
 	}
 }
 
 // TestMapToScanResult_122_GuidelinesAreSorted verifies that all guideline
-// slices are returned in sorted order (contract of mapToScanResult).
+// slices are returned in sorted order (contract of MapToScanResult).
 func TestMapToScanResult_122_GuidelinesAreSorted(t *testing.T) {
 	t.Parallel()
 	raw := makeRaw("https://example.com",
-		[]axeViolation{
+		[]AxeViolation{
 			violation122("video-captions-present", "critical"),
 			{ID: "image-alt", Impact: "critical", Tags: []string{"wcag2aa"}},
 		},
 		nil,
 	)
-	result := mapToScanResult(raw, "https://example.com", "AA", 50)
+	result := MapToScanResult(raw, "https://example.com", "AA", 50)
 	if !sort.StringsAreSorted(result.ViolationGuidelines) {
 		t.Errorf("ViolationGuidelines not sorted: %v", result.ViolationGuidelines)
 	}
@@ -179,13 +179,13 @@ func TestMapToScanResult_122_GuidelinesAreSorted(t *testing.T) {
 func TestMapToScanResult_122_ViolationCount(t *testing.T) {
 	t.Parallel()
 	raw := makeRaw("https://example.com",
-		[]axeViolation{
+		[]AxeViolation{
 			violation122("video-captions-present", "critical"),
 			violation122("video-captions-track-src", "serious"),
 		},
 		nil,
 	)
-	result := mapToScanResult(raw, "https://example.com", "AA", 80)
+	result := MapToScanResult(raw, "https://example.com", "AA", 80)
 	if result.Summary.ViolationCount != 2 {
 		t.Errorf("ViolationCount = %d; want 2", result.Summary.ViolationCount)
 	}
@@ -196,13 +196,13 @@ func TestMapToScanResult_122_ViolationCount(t *testing.T) {
 func TestMapToScanResult_122_NoDuplicateGuideline(t *testing.T) {
 	t.Parallel()
 	raw := makeRaw("https://example.com",
-		[]axeViolation{
+		[]AxeViolation{
 			violation122("video-captions-present", "critical"),
 			violation122("video-captions-track-src", "serious"),
 		},
 		nil,
 	)
-	result := mapToScanResult(raw, "https://example.com", "AA", 80)
+	result := MapToScanResult(raw, "https://example.com", "AA", 80)
 	count := 0
 	for _, g := range result.ViolationGuidelines {
 		if g == "1.2.2" {
@@ -219,10 +219,10 @@ func TestMapToScanResult_122_NoDuplicateGuideline(t *testing.T) {
 func TestMapToScanResult_122_NodesMapped(t *testing.T) {
 	t.Parallel()
 	raw := makeRaw("https://example.com",
-		[]axeViolation{violation122("video-captions-present", "critical")},
+		[]AxeViolation{violation122("video-captions-present", "critical")},
 		nil,
 	)
-	result := mapToScanResult(raw, "https://example.com", "AA", 100)
+	result := MapToScanResult(raw, "https://example.com", "AA", 100)
 	if len(result.Violations) == 0 {
 		t.Fatal("Violations slice is empty")
 	}
@@ -356,10 +356,10 @@ func TestIntegration_122_FullPipeline_Violation(t *testing.T) {
 	t.Parallel()
 	url := "https://example.com/video-page"
 	raw := makeRaw(url,
-		[]axeViolation{violation122("video-captions-present", "critical")},
+		[]AxeViolation{violation122("video-captions-present", "critical")},
 		nil,
 	)
-	result := mapToScanResult(raw, url, "AA", 300)
+	result := MapToScanResult(raw, url, "AA", 300)
 	report := scoring.Report(result)
 
 	if report.URL != url {
@@ -393,8 +393,8 @@ func TestIntegration_122_FullPipeline_Violation(t *testing.T) {
 func TestIntegration_122_FullPipeline_Pass(t *testing.T) {
 	t.Parallel()
 	url := "https://example.com/accessible-video"
-	raw := makeRaw(url, nil, []axeRule{pass122()})
-	result := mapToScanResult(raw, url, "AA", 200)
+	raw := makeRaw(url, nil, []AxeRule{pass122()})
+	result := MapToScanResult(raw, url, "AA", 200)
 	report := scoring.Report(result)
 
 	if report.TotalViolations != 0 {
