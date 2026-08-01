@@ -35,6 +35,16 @@ type Config struct {
 	// LandingPageEnabled controls whether root (/) serves the marketing landing page
 	// vs index.html (the scan app). Default false.
 	LandingPageEnabled bool
+	// LeadCaptureEnabled controls whether lead capture modal & API are active.
+	LeadCaptureEnabled bool
+	LeadNotifyEmail    string
+	LeadStorePath      string
+	LeadIPSalt         string
+	SMTPHost           string
+	SMTPPort           int
+	SMTPUsername       string
+	SMTPPassword       string
+	SMTPFrom           string
 }
 
 // global holds the runtime configuration and is accessed concurrently.
@@ -199,6 +209,106 @@ func SetLandingPageEnabled(e bool) {
 	global.LandingPageEnabled = e
 }
 
+// GetLeadCaptureEnabled returns whether lead capture is enabled.
+func GetLeadCaptureEnabled() bool {
+	mu.RLock()
+	defer mu.RUnlock()
+	if global == nil {
+		return false
+	}
+	return global.LeadCaptureEnabled
+}
+
+// SetLeadCaptureEnabled toggles lead capture at runtime.
+func SetLeadCaptureEnabled(e bool) {
+	mu.Lock()
+	defer mu.Unlock()
+	if global == nil {
+		global = &Config{}
+	}
+	global.LeadCaptureEnabled = e
+}
+
+// GetLeadNotifyEmail returns recipient email for lead notifications.
+func GetLeadNotifyEmail() string {
+	mu.RLock()
+	defer mu.RUnlock()
+	if global == nil || global.LeadNotifyEmail == "" {
+		return "iamsabroy@gmail.com"
+	}
+	return global.LeadNotifyEmail
+}
+
+// GetLeadStorePath returns lead JSONL storage file path.
+func GetLeadStorePath() string {
+	mu.RLock()
+	defer mu.RUnlock()
+	if global == nil || global.LeadStorePath == "" {
+		return "data/leads.jsonl"
+	}
+	return global.LeadStorePath
+}
+
+// GetLeadIPSalt returns salt for hashing visitor IP.
+func GetLeadIPSalt() string {
+	mu.RLock()
+	defer mu.RUnlock()
+	if global == nil {
+		return ""
+	}
+	return global.LeadIPSalt
+}
+
+// GetSMTPHost returns SMTP server host.
+func GetSMTPHost() string {
+	mu.RLock()
+	defer mu.RUnlock()
+	if global == nil {
+		return ""
+	}
+	return global.SMTPHost
+}
+
+// GetSMTPPort returns SMTP server port.
+func GetSMTPPort() int {
+	mu.RLock()
+	defer mu.RUnlock()
+	if global == nil || global.SMTPPort == 0 {
+		return 587
+	}
+	return global.SMTPPort
+}
+
+// GetSMTPUsername returns SMTP auth username.
+func GetSMTPUsername() string {
+	mu.RLock()
+	defer mu.RUnlock()
+	if global == nil {
+		return ""
+	}
+	return global.SMTPUsername
+}
+
+// GetSMTPPassword returns SMTP auth password.
+func GetSMTPPassword() string {
+	mu.RLock()
+	defer mu.RUnlock()
+	if global == nil {
+		return ""
+	}
+	return global.SMTPPassword
+}
+
+// GetSMTPFrom returns sender address for outgoing lead notifications.
+func GetSMTPFrom() string {
+	mu.RLock()
+	defer mu.RUnlock()
+	if global == nil {
+		return ""
+	}
+	return global.SMTPFrom
+}
+
 // SetSecret updates the JWT secret at runtime.
 func SetSecret(newSecret string) {
 	mu.Lock()
@@ -247,6 +357,15 @@ func Load() *Config {
 		ActiveEngine:        getEnv("ACTIVE_ENGINE", "native"),
 		PDFScanningVisible:  getEnvBool("PDF_SCANNING_VISIBLE", false),
 		LandingPageEnabled:  getEnvBool("LANDING_PAGE_ENABLED", true),
+		LeadCaptureEnabled:  getEnvBool("LEAD_CAPTURE_ENABLED", false),
+		LeadNotifyEmail:    getEnv("LEAD_NOTIFY_EMAIL", "iamsabroy@gmail.com"),
+		LeadStorePath:      getEnv("LEAD_STORE_PATH", "data/leads.jsonl"),
+		LeadIPSalt:         getEnv("LEAD_IP_SALT", ""),
+		SMTPHost:           getEnv("SMTP_HOST", ""),
+		SMTPPort:           getEnvInt("SMTP_PORT", 587),
+		SMTPUsername:       getEnv("SMTP_USERNAME", ""),
+		SMTPPassword:       getEnv("SMTP_PASSWORD", ""),
+		SMTPFrom:           getEnv("SMTP_FROM", ""),
 	}
 }
 

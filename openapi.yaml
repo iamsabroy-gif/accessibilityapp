@@ -41,6 +41,57 @@ tags:
 # ─────────────────────────────────────────────────────────────────────────────
 paths:
 
+  /api/v1/leads:
+    post:
+      summary: Capture Marketing Lead Email
+      description: Public rate-limited endpoint to capture email leads from landing page CTAs.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - email
+                - consent
+              properties:
+                email:
+                  type: string
+                  format: email
+                  maxLength: 254
+                  example: visitor@example.com
+                source:
+                  type: string
+                  enum: [scan_cta, extension_cta, unknown]
+                  example: scan_cta
+                consent:
+                  type: boolean
+                  example: true
+                website:
+                  type: string
+                  description: Honeypot field for bot defense. Must be empty.
+                  example: ""
+      responses:
+        '200':
+          description: Lead captured successfully or honeypot triggered silently
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                    example: true
+        '400':
+          description: Invalid email format, missing consent, or malformed body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Lead capture feature disabled
+
   /api/v1/report/ada:
     post:
       summary: Generate ADA Title III Report

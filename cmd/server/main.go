@@ -14,6 +14,7 @@ import (
 	"github.com/webaccessibility/server/internal/api"
 	"github.com/webaccessibility/server/internal/config"
 	"github.com/webaccessibility/server/internal/coverage"
+	"github.com/webaccessibility/server/internal/leads"
 	"github.com/webaccessibility/server/internal/scanner"
 	"go.uber.org/zap"
 )
@@ -40,13 +41,27 @@ func main() {
 	}
 	coverageStore := coverage.NewStore(coveragePath)
 
+	// Leads
+	leadStore := leads.NewStore(cfg.LeadStorePath)
+	leadNotifier := leads.NewSMTPNotifier(
+		cfg.SMTPHost,
+		cfg.SMTPPort,
+		cfg.SMTPUsername,
+		cfg.SMTPPassword,
+		cfg.SMTPFrom,
+		cfg.LeadNotifyEmail,
+		logger,
+	)
+
 	// Handler
 	h := &api.Handler{
-		Scanner:     axeRunner,
-		Logger:      logger,
-		WCAGLevel:   cfg.WCAGLevel,
-		ScanTimeout: time.Duration(cfg.ScanTimeoutSeconds) * time.Second,
-		Coverage:    coverageStore,
+		Scanner:      axeRunner,
+		Logger:       logger,
+		WCAGLevel:    cfg.WCAGLevel,
+		ScanTimeout:  time.Duration(cfg.ScanTimeoutSeconds) * time.Second,
+		Coverage:     coverageStore,
+		LeadStore:    leadStore,
+		LeadNotifier: leadNotifier,
 	}
 
 	// Router

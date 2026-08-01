@@ -12,12 +12,15 @@ import (
 	"net/url"
 	"path/filepath"
 	"strings"
+	"net"
+	"net/mail"
 	"sync"
 	"time"
 
 	"github.com/golang-jwt/jwt/v4"
 	"github.com/webaccessibility/server/internal/config"
 	"github.com/webaccessibility/server/internal/coverage"
+	"github.com/webaccessibility/server/internal/leads"
 	"github.com/webaccessibility/server/internal/models"
 	"github.com/webaccessibility/server/internal/report"
 	"github.com/webaccessibility/server/internal/scanner"
@@ -34,12 +37,14 @@ type reportCacheEntry struct {
 
 // Handler holds shared dependencies for all route handlers.
 type Handler struct {
-	Scanner     scanner.Scanner
-	Logger      *zap.Logger
-	WCAGLevel   string
-	ScanTimeout time.Duration
-	Coverage    *coverage.Store
-	activeScans int32
+	Scanner      scanner.Scanner
+	Logger       *zap.Logger
+	WCAGLevel    string
+	ScanTimeout  time.Duration
+	Coverage     *coverage.Store
+	LeadStore    *leads.Store
+	LeadNotifier leads.Notifier
+	activeScans  int32
 
 	// In-memory report cache for extension "View Detailed Report" links.
 	reportCacheMu sync.Mutex
@@ -937,3 +942,105 @@ func (h *Handler) ReportBITV(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte(html))
 	}
 }
+
+// CaptureLeadReq defines the request body for POST /api/v1/leads
+type CaptureLeadReq struct {
+	Email   string `json:"email"`
+	Source  string `json:"source"`
+	Consent bool   `json:"consent"`
+	Website string `json:"website"` // Honeypot field — must be empty
+}
+
+// getClientIP extracts the real client IP from headers or RemoteAddr.
+func getClientIP(r *http.Request) string {
+	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
+		parts := strings.Split(xff, ",")
+		if len(parts) > 0 {
+			return strings.TrimSpace(parts[0])
+		}
+	}
+	if xreal := r.Header.Get("X-Real-IP"); xreal != "" {
+		return strings.TrimSpace(xreal)
+	}
+	addr := r.RemoteAddr
+	if host, _, err := net.SplitHostPort(addr); err == nil {
+		return host
+	}
+	return addr
+}
+
+// CaptureLead handles POST /api/v1/leads
+func (h *Handler) CaptureLead(w http.ResponseWriter, r *http.Request) {
+	if !config.GetLeadCaptureEnabled() {
+		writeJSON(w, http.StatusNotFound, models.ErrorResponse{Error: "Lead capture is disabled"})
+		return
+	}
+
+	// Limit request payload to 4KB
+	r.Body = http.MaxBytesReader(w, r.Body, 4096)
+
+	var req CaptureLeadReq
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, models.ErrorResponse{Error: "Invalid JSON payload"})
+		return
+	}
+
+	req.Email = strings.TrimSpace(req.Email)
+	req.Website = strings.TrimSpace(req.Website)
+
+	// Honeypot check: silently succeed if bot filled hidden field
+	if req.Website != "" {
+		writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+		return
+	}
+
+	// Validate email format and max length (254 chars)
+	if len(req.Email) == 0 || len(req.Email) > 254 {
+		writeJSON(w, http.StatusBadRequest, models.ErrorResponse{Error: "Invalid email address"})
+		return
+	}
+	if _, err := mail.ParseAddress(req.Email); err != nil {
+		writeJSON(w, http.StatusBadRequest, models.ErrorResponse{Error: "Invalid email address format"})
+		return
+	}
+
+	// Consent check
+	if !req.Consent {
+		writeJSON(w, http.StatusBadRequest, models.ErrorResponse{Error: "Consent is required"})
+		return
+	}
+
+	// Source normalization
+	source := req.Source
+	if source != "scan_cta" && source != "extension_cta" {
+		source = "unknown"
+	}
+
+	ip := getClientIP(r)
+	ipHash := leads.HashIP(ip, config.GetLeadIPSalt())
+	userAgent := r.UserAgent()
+
+	rec := &leads.LeadRecord{
+		Email:     req.Email,
+		Source:    source,
+		Consent:   req.Consent,
+		IPHash:    ipHash,
+		UserAgent: userAgent,
+		Timestamp: time.Now().UTC().Format(time.RFC3339),
+	}
+
+	if h.LeadStore != nil {
+		if err := h.LeadStore.Save(rec); err != nil {
+			if h.Logger != nil {
+				h.Logger.Error("failed to save lead record", zap.Error(err))
+			}
+		}
+	}
+
+	if h.LeadNotifier != nil {
+		_ = h.LeadNotifier.Notify(r.Context(), rec)
+	}
+
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+

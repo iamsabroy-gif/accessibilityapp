@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/webaccessibility/server/internal/config"
@@ -33,9 +34,10 @@ func NewRouter(h *Handler, logger *zap.Logger) *chi.Mux {
 		r.Post("/secret", jwtAuthMiddleware(h.SetSecret)) // protected: change secret
 		r.Get("/secret", jwtAuthMiddleware(h.GetSecret))  // protected: retrieve secret (dev/ops only)
 
-		// Rate-limit the expensive scan/score endpoints
+		// Rate-limit the expensive scan/score endpoints & public lead capture
 		r.Group(func(r chi.Router) {
 			r.Use(rateLimitMiddleware())
+			r.Post("/leads", h.CaptureLead) // public + rate-limited
 			r.Post("/scan", jwtAuthMiddleware(h.Scan))
 			r.Post("/scan/client", jwtAuthMiddleware(h.ScanClient))
 			r.Post("/score", jwtAuthMiddleware(h.ScoreOnly))
@@ -62,7 +64,17 @@ func NewRouter(h *Handler, logger *zap.Logger) *chi.Mux {
 	r.Get("/", func(w http.ResponseWriter, req *http.Request) {
 		w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
 		if config.GetLandingPageEnabled() {
-			http.ServeFile(w, req, filepath.Join(frontendDir, "landing.html"))
+			landingFile := filepath.Join(frontendDir, "landing.html")
+			if !config.GetLeadCaptureEnabled() {
+				content, err := os.ReadFile(landingFile)
+				if err == nil {
+					w.Header().Set("Content-Type", "text/html; charset=utf-8")
+					htmlStr := strings.Replace(string(content), `name="lead-capture-enabled" content="true"`, `name="lead-capture-enabled" content="false"`, 1)
+					w.Write([]byte(htmlStr))
+					return
+				}
+			}
+			http.ServeFile(w, req, landingFile)
 			return
 		}
 		http.ServeFile(w, req, filepath.Join(frontendDir, "index.html"))
