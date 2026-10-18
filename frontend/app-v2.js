@@ -1960,6 +1960,37 @@ function closeAdminPasswordModal() {
   document.body.style.overflow = '';
 }
 
+// ─── App Registration Helpers ─────────────────────────────────
+function isUserRegistered() {
+  return localStorage.getItem('accessscan_registered') === '1' || sessionStorage.getItem('accessscan_registered') === '1';
+}
+
+let pendingScanCallback = null;
+
+function openAppRegisterModal(onSuccess) {
+  pendingScanCallback = onSuccess;
+  const modal = $('app-register-modal');
+  const input = $('app-register-email');
+  const errEl = $('app-register-error');
+  if (!modal) return;
+  if (errEl) { errEl.textContent = ''; errEl.style.display = 'none'; }
+  if (input) input.value = '';
+  modal.classList.add('open');
+  modal.setAttribute('aria-hidden', 'false');
+  modal.removeAttribute('inert');
+  setTimeout(() => input?.focus(), 100);
+  document.body.style.overflow = 'hidden';
+}
+
+function closeAppRegisterModal() {
+  const modal = $('app-register-modal');
+  if (!modal) return;
+  modal.classList.remove('open');
+  modal.setAttribute('aria-hidden', 'true');
+  modal.setAttribute('inert', '');
+  document.body.style.overflow = '';
+}
+
 async function submitAdminPassword() {
   const input   = $('admin-password-input');
   const errEl   = $('admin-password-error');
@@ -2241,9 +2272,86 @@ document.addEventListener('DOMContentLoaded', () => {
       };
     }
     
-    scanBtn.disabled = true;
-    await runScan(url, 'AAA', depth, shouldGenerateReport, reportMeta, reportStandard, reportFormat);
-    scanBtn.disabled = false;
+    const triggerScan = async () => {
+      scanBtn.disabled = true;
+      try {
+        await runScan(url, 'AAA', depth, shouldGenerateReport, reportMeta, reportStandard, reportFormat);
+      } finally {
+        scanBtn.disabled = false;
+      }
+    };
+
+    if (!isUserRegistered()) {
+      openAppRegisterModal(triggerScan);
+      return;
+    }
+
+    await triggerScan();
+  });
+
+  // ── Email registration modal wiring ─────────────
+  $('app-register-form')?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const emailInput = $('app-register-email');
+    const submitBtn = $('app-register-submit');
+    const errEl = $('app-register-error');
+    const email = emailInput?.value.trim();
+    if (!email) return;
+
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) {
+      if (errEl) {
+        errEl.textContent = 'Please enter a valid email address.';
+        errEl.style.display = 'block';
+      }
+      return;
+    }
+
+    const honeypot = document.querySelector('#app-register-form input[name="website"]')?.value || '';
+    if (submitBtn) {
+      submitBtn.disabled = true;
+      submitBtn.textContent = 'Registering…';
+    }
+    if (errEl) {
+      errEl.textContent = '';
+      errEl.style.display = 'none';
+    }
+
+    try {
+      const res = await fetch(`${apiBase()}/api/v1/leads`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: email,
+          source: 'app_scan',
+          consent: true,
+          website: honeypot
+        })
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(data.error || 'Registration failed. Please try again.');
+      }
+      localStorage.setItem('accessscan_registered', '1');
+      sessionStorage.setItem('accessscan_registered', '1');
+      localStorage.setItem('accessscan_user_email', email);
+      closeAppRegisterModal();
+      if (typeof pendingScanCallback === 'function') {
+        const cb = pendingScanCallback;
+        pendingScanCallback = null;
+        cb();
+      }
+    } catch (err) {
+      if (errEl) {
+        errEl.textContent = err.message || 'Registration failed. Please try again.';
+        errEl.style.display = 'block';
+      }
+    } finally {
+      if (submitBtn) {
+        submitBtn.disabled = false;
+        submitBtn.textContent = 'Register & Start Scan →';
+      }
+    }
   });
 
   // ── New Scan button ──────────────────────────────

@@ -97,6 +97,40 @@ func TestCaptureLead_Valid(t *testing.T) {
 	}
 }
 
+func TestCaptureLead_AppScanSource(t *testing.T) {
+	config.SetLeadCaptureEnabled(true)
+	defer config.SetLeadCaptureEnabled(false)
+
+	tempDir := t.TempDir()
+	storePath := filepath.Join(tempDir, "leads.jsonl")
+
+	router, _ := setupTestRouter(t, storePath)
+
+	body, _ := json.Marshal(CaptureLeadReq{
+		Email:   "appuser@example.com",
+		Source:  "app_scan",
+		Consent: true,
+	})
+
+	req := httptest.NewRequest("POST", "/api/v1/leads", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("expected 200 OK, got %d. Body: %s", w.Code, w.Body.String())
+	}
+
+	content, err := os.ReadFile(storePath)
+	if err != nil {
+		t.Fatalf("failed to read lead file: %v", err)
+	}
+	if !bytes.Contains(content, []byte(`"source":"app_scan"`)) {
+		t.Errorf("expected file to contain app_scan source, got: %s", string(content))
+	}
+}
+
 func TestCaptureLead_InvalidEmail(t *testing.T) {
 	config.SetLeadCaptureEnabled(true)
 	defer config.SetLeadCaptureEnabled(false)

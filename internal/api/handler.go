@@ -1012,7 +1012,7 @@ func (h *Handler) CaptureLead(w http.ResponseWriter, r *http.Request) {
 
 	// Source normalization
 	source := req.Source
-	if source != "scan_cta" && source != "extension_cta" {
+	if source != "scan_cta" && source != "extension_cta" && source != "app_scan" {
 		source = "unknown"
 	}
 

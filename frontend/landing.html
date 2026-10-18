@@ -636,7 +636,7 @@
         </svg>
         Open Scanner App →
       </a>
-      <p class="micro-trust" style="margin-top: 1rem;">✓ No account required &nbsp;•&nbsp; Results in ~30 seconds &nbsp;•&nbsp; 63 checks across 43 WCAG success criteria</p>
+      <p class="micro-trust" style="margin-top: 1rem;">✓ Free email registration &nbsp;•&nbsp; Results in ~30 seconds &nbsp;•&nbsp; 63 checks across 43 WCAG success criteria</p>
     </div>
 
     <div class="feature-chips">
@@ -954,7 +954,7 @@
   <!-- FINAL HERO CTA -->
   <section class="landing-hero" style="padding-top: 2rem; padding-bottom: 5rem;" aria-label="Start scanning CTA">
     <h2 class="final-cta-title">Ready to test your website's accessibility?</h2>
-    <p class="subhead" style="margin-bottom: 2rem;">No registration required. Free instant scan in 30 seconds.</p>
+    <p class="subhead" style="margin-bottom: 2rem;">Free instant scan in 30 seconds. One-step email registration.</p>
 
     <div>
       <a href="/app" class="btn-hero-cta" data-lead-cta="scan_cta">
@@ -1069,20 +1069,38 @@
   .btn-lead-submit:hover {
     filter: brightness(1.1);
   }
-  .btn-lead-dismiss {
+  .lead-modal-cancel-btn {
     width: 100%;
     background: transparent;
-    border: none;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: var(--radius-md, 8px);
     color: var(--text-muted, #64748b);
     font-size: 0.88rem;
-    padding: 0.6rem;
+    padding: 0.65rem;
     cursor: pointer;
-    margin-top: 0.5rem;
-    text-decoration: underline;
-    transition: color 0.2s ease;
+    margin-top: 0.65rem;
+    transition: all 0.2s ease;
   }
-  .btn-lead-dismiss:hover {
+  .lead-modal-cancel-btn:hover {
     color: var(--text-secondary, #94a3b8);
+    background: rgba(255, 255, 255, 0.04);
+    border-color: rgba(255, 255, 255, 0.2);
+  }
+  .btn-lead-submit:disabled {
+    opacity: 0.65;
+    cursor: not-allowed;
+  }
+  .lead-modal-error {
+    color: #f87171;
+    background: rgba(239, 68, 68, 0.12);
+    border: 1px solid rgba(239, 68, 68, 0.35);
+    border-radius: var(--radius-md, 8px);
+    padding: 0.65rem 0.85rem;
+    font-size: 0.85rem;
+    line-height: 1.4;
+    margin-bottom: 1rem;
+    text-align: left;
+    display: none;
   }
   .lead-privacy-note {
     font-size: 0.78rem;
@@ -1095,9 +1113,11 @@
 
 <div id="lead-modal-backdrop" class="lead-modal-backdrop" aria-hidden="true">
   <div class="lead-modal-card" role="dialog" aria-modal="true" aria-labelledby="lead-modal-title" aria-describedby="lead-modal-sub">
-    <h3 id="lead-modal-title" class="lead-modal-title">Stay updated on AccessScan features & standards</h3>
-    <p id="lead-modal-sub" class="lead-modal-sub">Enter your email for occasional product updates and new accessibility rule releases. No spam, unsubscribe anytime.</p>
+    <h3 id="lead-modal-title" class="lead-modal-title">Registration Required</h3>
+    <p id="lead-modal-sub" class="lead-modal-sub">Enter your email address to access the scanner app and download the extension.</p>
     
+    <div id="lead-modal-error" class="lead-modal-error" role="alert" aria-live="polite"></div>
+
     <form id="lead-capture-form">
       <!-- Honeypot input for bot defense -->
       <input type="text" name="website" tabIndex="-1" style="display:none !important; position:absolute; left:-9999px;" autocomplete="off" />
@@ -1108,11 +1128,11 @@
       </div>
 
       <button type="submit" id="lead-submit-btn" class="btn-lead-submit">
-        Email me & continue →
+        Register &amp; Continue →
       </button>
 
-      <button type="button" id="lead-capture-dismiss" class="btn-lead-dismiss">
-        No thanks, just continue
+      <button type="button" id="lead-capture-cancel" class="lead-modal-cancel-btn">
+        Cancel and stay on page
       </button>
 
       <div class="lead-privacy-note">
@@ -1124,18 +1144,35 @@
 
 <script>
 (function() {
-  const PROMPTED_KEY = 'accessscan_lead_prompted';
+  const REGISTERED_KEY = 'accessscan_registered';
   const backdrop = document.getElementById('lead-modal-backdrop');
   const form = document.getElementById('lead-capture-form');
   const emailInput = document.getElementById('lead-capture-email');
-  const dismissBtn = document.getElementById('lead-capture-dismiss');
+  const submitBtn = document.getElementById('lead-submit-btn');
+  const cancelBtn = document.getElementById('lead-capture-cancel');
+  const errorBox = document.getElementById('lead-modal-error');
   
   let pendingAction = null;
   let lastActiveElement = null;
 
+  function showError(msg) {
+    if (errorBox) {
+      errorBox.textContent = msg;
+      errorBox.style.display = 'block';
+    }
+  }
+
+  function hideError() {
+    if (errorBox) {
+      errorBox.textContent = '';
+      errorBox.style.display = 'none';
+    }
+  }
+
   function openModal(action, sourceElement) {
     pendingAction = action;
     lastActiveElement = sourceElement || document.activeElement;
+    hideError();
     backdrop.classList.add('active');
     backdrop.setAttribute('aria-hidden', 'false');
     setTimeout(() => {
@@ -1146,6 +1183,7 @@
   function closeModal() {
     backdrop.classList.remove('active');
     backdrop.setAttribute('aria-hidden', 'true');
+    hideError();
     if (lastActiveElement && typeof lastActiveElement.focus === 'function') {
       lastActiveElement.focus();
     }
@@ -1168,10 +1206,8 @@
     }
   }
 
-  function completeAndProceed() {
-    sessionStorage.setItem(PROMPTED_KEY, '1');
-    closeModal();
-    executePendingAction();
+  function isRegistered() {
+    return localStorage.getItem(REGISTERED_KEY) === '1' || sessionStorage.getItem(REGISTERED_KEY) === '1';
   }
 
   // Intercept all scan/download CTAs
@@ -1182,7 +1218,7 @@
       const isEnabled = !meta || meta.getAttribute('content') === 'true';
       if (!isEnabled) return;
 
-      if (sessionStorage.getItem(PROMPTED_KEY) === '1') return;
+      if (isRegistered()) return; // Already registered, let action proceed
       e.preventDefault();
       const href = this.getAttribute('href');
       const isDownload = this.hasAttribute('download');
@@ -1195,10 +1231,23 @@
   form.addEventListener('submit', function(e) {
     e.preventDefault();
     const email = emailInput.value.trim();
-    if (!email) return;
+    if (!email) {
+      showError('Please enter an email address.');
+      return;
+    }
+
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) {
+      showError('Please enter a valid email address (e.g. name@domain.com).');
+      return;
+    }
 
     const honeypot = form.querySelector('input[name="website"]').value;
     const source = (pendingAction && pendingAction.source) || 'scan_cta';
+
+    submitBtn.disabled = true;
+    submitBtn.textContent = 'Registering…';
+    hideError();
 
     fetch('/api/v1/leads', {
       method: 'POST',
@@ -1209,29 +1258,52 @@
         consent: true,
         website: honeypot
       })
-    }).catch(err => {
+    })
+    .then(async res => {
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(data.error || 'Registration failed. Please try again.');
+      }
+      return data;
+    })
+    .then(() => {
+      localStorage.setItem(REGISTERED_KEY, '1');
+      sessionStorage.setItem(REGISTERED_KEY, '1');
+      localStorage.setItem('accessscan_user_email', email);
+      closeModal();
+      executePendingAction();
+    })
+    .catch(err => {
       console.warn('Lead capture submit error:', err);
-    }).finally(() => {
-      completeAndProceed();
+      showError(err.message || 'Registration failed. Please check your connection and try again.');
+    })
+    .finally(() => {
+      submitBtn.disabled = false;
+      submitBtn.textContent = 'Register & Continue →';
     });
   });
 
-  // Handle Dismiss
-  dismissBtn.addEventListener('click', function() {
-    completeAndProceed();
-  });
+  // Handle Cancel (stay on landing page, DO NOT proceed to /app or download)
+  if (cancelBtn) {
+    cancelBtn.addEventListener('click', function() {
+      pendingAction = null;
+      closeModal();
+    });
+  }
 
   // Accessibility: Esc key listener and Tab focus trapping
   document.addEventListener('keydown', function(e) {
     if (!backdrop.classList.contains('active')) return;
 
     if (e.key === 'Escape') {
-      completeAndProceed();
+      // Escape closes modal and cancels action (does NOT proceed)
+      pendingAction = null;
+      closeModal();
       return;
     }
 
     if (e.key === 'Tab') {
-      const focusables = backdrop.querySelectorAll('input, button, a[href]');
+      const focusables = backdrop.querySelectorAll('input:not([tabIndex="-1"]), button, a[href]');
       if (!focusables.length) return;
       const first = focusables[0];
       const last = focusables[focusables.length - 1];

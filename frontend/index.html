@@ -576,6 +576,54 @@
   </div>
 
   <!-- ═══════════════════════════════════════
+       EMAIL REGISTRATION MODAL
+       Mandatory gate before scanning
+  ═══════════════════════════════════════ -->
+  <div
+    id="app-register-modal"
+    class="modal-wrap"
+    role="dialog"
+    aria-modal="true"
+    aria-label="Email registration required"
+    aria-hidden="true"
+    inert
+  >
+    <div id="app-register-modal-overlay" class="modal-overlay"></div>
+    <div class="modal-box" style="max-width:440px;">
+      <div class="modal-header">
+        <span class="modal-icon" aria-hidden="true">✉️</span>
+        <div>
+          <div class="modal-title">Registration Required</div>
+          <div class="modal-subtitle">Enter your email to run website accessibility scans</div>
+        </div>
+      </div>
+      <form id="app-register-form">
+        <div class="modal-body">
+          <input type="text" name="website" tabIndex="-1" style="display:none !important; position:absolute; left:-9999px;" autocomplete="off" />
+          <label for="app-register-email" class="form-label" style="font-size:0.85rem;">Email Address</label>
+          <input
+            id="app-register-email"
+            type="email"
+            required
+            placeholder="you@company.com"
+            autocomplete="email"
+            class="modal-input"
+          />
+          <p id="app-register-error" class="modal-error" role="alert" aria-live="polite" style="display:none;"></p>
+          <p style="font-size: 0.75rem; color: var(--text-muted, #64748b); margin-top: 0.5rem; line-height: 1.4;">
+            🔒 We respect your privacy. No spam, unsubscribe anytime.
+          </p>
+        </div>
+        <div class="modal-footer">
+          <button id="app-register-submit" class="modal-btn-primary" type="submit" style="width: 100%;">
+            Register &amp; Start Scan →
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════
        ADMIN SETTINGS DRAWER
        Only visible after password verification
   ═══════════════════════════════════════ -->

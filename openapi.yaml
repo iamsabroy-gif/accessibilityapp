@@ -63,7 +63,7 @@ paths:
                   example: visitor@example.com
                 source:
                   type: string
-                  enum: [scan_cta, extension_cta, unknown]
+                  enum: [scan_cta, extension_cta, app_scan, unknown]
                   example: scan_cta
                 consent:
                   type: boolean
