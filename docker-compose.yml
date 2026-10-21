@@ -16,6 +16,7 @@ services:
       - SMTP_FROM=iamsabroy@gmail.com
       - LEAD_CAPTURE_ENABLED=true
       - LEAD_NOTIFY_EMAIL=iamsabroy@gmail.com
+      - VISIT_TRACKING_ENABLED=true
     volumes:
       - ./data:/app/data
 

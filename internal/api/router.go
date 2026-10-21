@@ -38,6 +38,7 @@ func NewRouter(h *Handler, logger *zap.Logger) *chi.Mux {
 		r.Group(func(r chi.Router) {
 			r.Use(rateLimitMiddleware())
 			r.Post("/leads", h.CaptureLead) // public + rate-limited
+			r.Post("/visit", h.CaptureVisit) // public + rate-limited
 			r.Post("/scan", jwtAuthMiddleware(h.Scan))
 			r.Post("/scan/client", jwtAuthMiddleware(h.ScanClient))
 			r.Post("/score", jwtAuthMiddleware(h.ScoreOnly))

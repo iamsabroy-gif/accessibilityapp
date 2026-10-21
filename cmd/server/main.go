@@ -16,6 +16,7 @@ import (
 	"github.com/webaccessibility/server/internal/coverage"
 	"github.com/webaccessibility/server/internal/leads"
 	"github.com/webaccessibility/server/internal/scanner"
+	"github.com/webaccessibility/server/internal/visits"
 	"go.uber.org/zap"
 )
 
@@ -53,6 +54,9 @@ func main() {
 		logger,
 	)
 
+	// Visits
+	visitStore := visits.NewStore(cfg.VisitStorePath)
+
 	// Handler
 	h := &api.Handler{
 		Scanner:      axeRunner,
@@ -62,6 +66,7 @@ func main() {
 		Coverage:     coverageStore,
 		LeadStore:    leadStore,
 		LeadNotifier: leadNotifier,
+		VisitStore:   visitStore,
 	}
 
 	// Router

@@ -2232,6 +2232,20 @@ function updateAdminTokenStatus() {
 
 // ─── Event Wiring ──────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', () => {
+  // ── Return-visit telemetry ────────────────────────
+  (function trackVisit() {
+    try {
+      const email = localStorage.getItem('accessscan_user_email');
+      if (email && email.includes('@')) {
+        fetch(`${apiBase()}/api/v1/visit`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email })
+        }).catch(() => {});
+      }
+    } catch (_) {}
+  })();
+
   // ── Scan form ────────────────────────────────────
   const form     = $('scan-form-el');
   const urlInput = $('url-input');

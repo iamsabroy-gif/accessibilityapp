@@ -92,6 +92,39 @@ paths:
         '404':
           description: Lead capture feature disabled
 
+  /api/v1/visit:
+    post:
+      summary: Record Return Visit
+      description: Public rate-limited endpoint to record return visits from registered users.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - email
+              properties:
+                email:
+                  type: string
+                  format: email
+                  maxLength: 254
+                  example: user@example.com
+      responses:
+        '200':
+          description: Visit recorded successfully or malformed email silently accepted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                    example: true
+        '404':
+          description: Visit tracking feature disabled
+
   /api/v1/report/ada:
     post:
       summary: Generate ADA Title III Report

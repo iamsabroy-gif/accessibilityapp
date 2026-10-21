@@ -25,6 +25,7 @@ import (
 	"github.com/webaccessibility/server/internal/report"
 	"github.com/webaccessibility/server/internal/scanner"
 	"github.com/webaccessibility/server/internal/scoring"
+	"github.com/webaccessibility/server/internal/visits"
 	"go.uber.org/zap"
 	"sync/atomic"
 )
@@ -44,6 +45,7 @@ type Handler struct {
 	Coverage     *coverage.Store
 	LeadStore    *leads.Store
 	LeadNotifier leads.Notifier
+	VisitStore   *visits.Store
 	activeScans  int32
 
 	// In-memory report cache for extension "View Detailed Report" links.
@@ -1039,6 +1041,54 @@ func (h *Handler) CaptureLead(w http.ResponseWriter, r *http.Request) {
 
 	if h.LeadNotifier != nil {
 		_ = h.LeadNotifier.Notify(r.Context(), rec)
+	}
+
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
+// CaptureVisitReq represents request body for recording a return visit.
+type CaptureVisitReq struct {
+	Email string `json:"email"`
+}
+
+// CaptureVisit handles POST /api/v1/visit
+func (h *Handler) CaptureVisit(w http.ResponseWriter, r *http.Request) {
+	if !config.GetVisitTrackingEnabled() {
+		writeJSON(w, http.StatusNotFound, models.ErrorResponse{Error: "Visit tracking is disabled"})
+		return
+	}
+
+	// Limit request payload to 2KB
+	r.Body = http.MaxBytesReader(w, r.Body, 2048)
+
+	var req CaptureVisitReq
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		// Silently succeed on malformed JSON to prevent client retry loops
+		writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+		return
+	}
+
+	email := strings.TrimSpace(req.Email)
+	if len(email) == 0 || len(email) > 254 {
+		writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+		return
+	}
+	if _, err := mail.ParseAddress(email); err != nil {
+		writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+		return
+	}
+
+	rec := &visits.VisitRecord{
+		Email:     email,
+		Timestamp: time.Now().UTC().Format(time.RFC3339),
+	}
+
+	if h.VisitStore != nil {
+		if err := h.VisitStore.Save(rec); err != nil {
+			if h.Logger != nil {
+				h.Logger.Error("failed to save visit record", zap.Error(err))
+			}
+		}
 	}
 
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})

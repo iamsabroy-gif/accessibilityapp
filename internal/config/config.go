@@ -45,6 +45,9 @@ type Config struct {
 	SMTPUsername       string
 	SMTPPassword       string
 	SMTPFrom           string
+	// VisitTrackingEnabled controls whether returning visit telemetry is recorded.
+	VisitTrackingEnabled bool
+	VisitStorePath       string
 }
 
 // global holds the runtime configuration and is accessed concurrently.
@@ -249,6 +252,46 @@ func GetLeadStorePath() string {
 	return global.LeadStorePath
 }
 
+// GetVisitTrackingEnabled returns whether visit tracking is enabled.
+func GetVisitTrackingEnabled() bool {
+	mu.RLock()
+	defer mu.RUnlock()
+	if global == nil {
+		return false
+	}
+	return global.VisitTrackingEnabled
+}
+
+// SetVisitTrackingEnabled toggles visit tracking at runtime.
+func SetVisitTrackingEnabled(e bool) {
+	mu.Lock()
+	defer mu.Unlock()
+	if global == nil {
+		global = &Config{}
+	}
+	global.VisitTrackingEnabled = e
+}
+
+// GetVisitStorePath returns visit JSONL storage file path.
+func GetVisitStorePath() string {
+	mu.RLock()
+	defer mu.RUnlock()
+	if global == nil || global.VisitStorePath == "" {
+		return "data/visits.jsonl"
+	}
+	return global.VisitStorePath
+}
+
+// SetVisitStorePath updates visit store file path.
+func SetVisitStorePath(p string) {
+	mu.Lock()
+	defer mu.Unlock()
+	if global == nil {
+		global = &Config{}
+	}
+	global.VisitStorePath = p
+}
+
 // GetLeadIPSalt returns salt for hashing visitor IP.
 func GetLeadIPSalt() string {
 	mu.RLock()
@@ -366,6 +409,8 @@ func Load() *Config {
 		SMTPUsername:       getEnv("SMTP_USERNAME", ""),
 		SMTPPassword:       getEnv("SMTP_PASSWORD", ""),
 		SMTPFrom:           getEnv("SMTP_FROM", ""),
+		VisitTrackingEnabled: getEnvBool("VISIT_TRACKING_ENABLED", false),
+		VisitStorePath:       getEnv("VISIT_STORE_PATH", "data/visits.jsonl"),
 	}
 }
 

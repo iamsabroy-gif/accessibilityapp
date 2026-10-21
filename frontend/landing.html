@@ -1145,6 +1145,21 @@
 <script>
 (function() {
   const REGISTERED_KEY = 'accessscan_registered';
+
+  // Return-visit telemetry for registered users returning to landing page
+  (function trackVisit() {
+    try {
+      const email = localStorage.getItem('accessscan_user_email');
+      if (email && email.includes('@')) {
+        fetch('/api/v1/visit', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email })
+        }).catch(() => {});
+      }
+    } catch (_) {}
+  })();
+
   const backdrop = document.getElementById('lead-modal-backdrop');
   const form = document.getElementById('lead-capture-form');
   const emailInput = document.getElementById('lead-capture-email');
