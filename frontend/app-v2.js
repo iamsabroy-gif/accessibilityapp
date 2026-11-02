@@ -2100,6 +2100,36 @@ async function loadAdminSettings() {
   }
 }
 
+async function loadAdminActivity() {
+  const status = $('admin-activity-status');
+  const body = document.querySelector('#admin-activity-table tbody');
+  if (!status || !body) return;
+  status.textContent = 'Loading…';
+  try {
+    const res = await fetch(`${apiBase()}/api/v1/admin/activity`, {
+      headers: { 'Authorization': `Bearer ${state.adminToken || ''}` }
+    });
+    if (!res.ok) throw new Error(res.status === 401 ? 'Admin session expired — unlock again.' : `Request failed (${res.status})`);
+    const { users } = await res.json();
+    body.replaceChildren(...users.map(u => {
+      const tr = document.createElement('tr');
+      // textContent only: emails are user-supplied.
+      [u.email, u.registered ? (u.source || '') : 'unregistered', (u.registered_at || '').slice(0, 10),
+       u.visit_days, u.total_visits, (u.last_seen || '').replace('T', ' ').replace('Z', '')].forEach((v, i) => {
+        const td = document.createElement('td');
+        td.textContent = v;
+        td.style.padding = '4px 6px';
+        if (i === 3 || i === 4) td.style.textAlign = 'right';
+        tr.appendChild(td);
+      });
+      return tr;
+    }));
+    status.textContent = `${users.filter(u => u.registered).length} registered, ${users.length} total emails`;
+  } catch (err) {
+    status.textContent = err.message;
+  }
+}
+
 function toggleScoringFormula(formula) {
   $('score-formula-compliance')?.classList.toggle('active', formula === 'compliance');
   $('score-formula-penalty')?.classList.toggle('active', formula === 'penalty');
@@ -2195,6 +2225,7 @@ function openAdminDrawer() {
   updateScanModeToggle();
   updateAdminTokenStatus();
   loadAdminSettings();
+  loadAdminActivity();
 
   overlay.classList.add('open');
   overlay.setAttribute('aria-hidden', 'false');
@@ -2401,6 +2432,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // ── Admin drawer ─────────────────────────────────
   $('admin-overlay')?.addEventListener('click', closeAdminDrawer);
   $('admin-drawer-close')?.addEventListener('click', closeAdminDrawer);
+  $('admin-activity-refresh')?.addEventListener('click', loadAdminActivity);
 
   $('scan-mode-serial')?.addEventListener('click', () => setScanMode('serial'));
   $('scan-mode-parallel')?.addEventListener('click', () => setScanMode('parallel'));

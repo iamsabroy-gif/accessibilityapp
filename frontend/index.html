@@ -722,6 +722,27 @@
 
       <button id="admin-refresh-token" class="btn-secondary" type="button" style="margin-top: 2rem;">Force Token Refresh</button>
 
+      <div class="admin-toggle-section" style="margin-top: 2rem;">
+        <label class="form-label">User Activity</label>
+        <p class="field-hint">Registered emails joined with return-visit pings (requires <code>VISIT_TRACKING_ENABLED</code>). Rows marked &ldquo;unregistered&rdquo; are visit pings with no matching lead.</p>
+        <button id="admin-activity-refresh" class="btn-secondary" type="button">Refresh Activity</button>
+        <p id="admin-activity-status" class="upload-status" role="status" aria-live="polite"></p>
+        <div style="overflow-x:auto;">
+          <table id="admin-activity-table" style="width:100%;font-size:0.78rem;border-collapse:collapse;">
+            <caption class="sr-only">Registered user activity</caption>
+            <thead><tr>
+              <th scope="col" style="text-align:left;">Email</th>
+              <th scope="col" style="text-align:left;">Source</th>
+              <th scope="col" style="text-align:left;">Registered</th>
+              <th scope="col" style="text-align:right;">Days</th>
+              <th scope="col" style="text-align:right;">Visits</th>
+              <th scope="col" style="text-align:left;">Last seen</th>
+            </tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+
       <div class="admin-upload-section">
         <label for="coverage-file-input">WCAG Coverage Report</label>
         <p class="field-hint">Upload the latest report using the same worksheet structure as <code>wcag_coverage_report.xlsx</code>.</p>

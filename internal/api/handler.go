@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/url"
 	"path/filepath"
+	"sort"
 	"strings"
 	"net"
 	"net/mail"
@@ -1094,3 +1095,72 @@ func (h *Handler) CaptureVisit(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
+// activityRow is one email's registration + visit summary for the admin view.
+type activityRow struct {
+	Email        string `json:"email"`
+	Registered   bool   `json:"registered"` // false = visit ping with no matching lead
+	Source       string `json:"source,omitempty"`
+	RegisteredAt string `json:"registered_at,omitempty"`
+	VisitDays    int    `json:"visit_days"`
+	TotalVisits  int    `json:"total_visits"`
+	LastSeen     string `json:"last_seen,omitempty"`
+}
+
+// GetActivity handles GET /api/v1/admin/activity: registered users joined with visit stats.
+func (h *Handler) GetActivity(w http.ResponseWriter, r *http.Request) {
+	rows := map[string]*activityRow{}
+	days := map[string]map[string]bool{}
+	get := func(email string) *activityRow {
+		k := strings.ToLower(strings.TrimSpace(email))
+		if rows[k] == nil {
+			rows[k] = &activityRow{Email: k}
+			days[k] = map[string]bool{}
+		}
+		return rows[k]
+	}
+
+	if h.LeadStore != nil {
+		recs, err := h.LeadStore.ReadAll()
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to read leads", err.Error())
+			return
+		}
+		for _, l := range recs {
+			row := get(l.Email)
+			// keep the earliest registration
+			if !row.Registered || l.Timestamp < row.RegisteredAt {
+				row.Registered, row.Source, row.RegisteredAt = true, l.Source, l.Timestamp
+			}
+		}
+	}
+	if h.VisitStore != nil {
+		recs, err := h.VisitStore.ReadAll()
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to read visits", err.Error())
+			return
+		}
+		for _, v := range recs {
+			row := get(v.Email)
+			row.TotalVisits++
+			if len(v.Timestamp) >= 10 {
+				days[strings.ToLower(strings.TrimSpace(v.Email))][v.Timestamp[:10]] = true
+			}
+			if v.Timestamp > row.LastSeen { // RFC3339 UTC sorts lexicographically
+				row.LastSeen = v.Timestamp
+			}
+		}
+	}
+
+	out := make([]*activityRow, 0, len(rows))
+	for k, row := range rows {
+		row.VisitDays = len(days[k])
+		out = append(out, row)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].LastSeen != out[j].LastSeen {
+			return out[i].LastSeen > out[j].LastSeen
+		}
+		return out[i].Email < out[j].Email
+	})
+	writeJSON(w, http.StatusOK, map[string]interface{}{"users": out})
+}

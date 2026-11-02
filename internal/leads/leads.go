@@ -1,6 +1,7 @@
 package leads
 
 import (
+	"bufio"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -9,6 +10,7 @@ import (
 	"net/smtp"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 
 	"go.uber.org/zap"
@@ -69,6 +71,33 @@ func (s *Store) Save(rec *LeadRecord) error {
 	}
 
 	return nil
+}
+
+// ReadAll returns every parseable lead record; a missing file yields none.
+func (s *Store) ReadAll() ([]LeadRecord, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	f, err := os.Open(s.filePath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("failed to open lead file: %w", err)
+	}
+	defer f.Close()
+
+	var out []LeadRecord
+	sc := bufio.NewScanner(f)
+	for sc.Scan() {
+		line := strings.TrimSpace(sc.Text())
+		var rec LeadRecord
+		if line == "" || json.Unmarshal([]byte(line), &rec) != nil || rec.Email == "" {
+			continue
+		}
+		out = append(out, rec)
+	}
+	return out, sc.Err()
 }
 
 // HashIP creates a SHA-256 hash of the IP address with a salt.

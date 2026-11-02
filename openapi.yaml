@@ -510,6 +510,37 @@ paths:
           $ref: "#/components/responses/InternalError"
 
   # ── ADMIN VERIFY ───────────────────────────────────────────────────────────
+  /admin/activity:
+    get:
+      summary: Registered-user activity (admin)
+      description: |
+        Registered emails (leads.jsonl) joined with return-visit pings (visits.jsonl).
+        Requires the admin token from POST /admin/verify. `registered: false` rows are
+        visit pings whose email has no matching lead.
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Activity per email, most recently seen first
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  users:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        email: { type: string }
+                        registered: { type: boolean }
+                        source: { type: string }
+                        registered_at: { type: string, format: date-time }
+                        visit_days: { type: integer }
+                        total_visits: { type: integer }
+                        last_seen: { type: string, format: date-time }
+        "401":
+          description: Missing or invalid admin token
   /admin/verify:
     post:
       tags: [Auth]

@@ -29,6 +29,7 @@ func NewRouter(h *Handler, logger *zap.Logger) *chi.Mux {
 		r.Post("/admin/coverage", adminAuthMiddleware(h.UploadCoverageReport))
 		r.Get("/admin/settings", adminAuthMiddleware(h.GetSettings))
 		r.Post("/admin/settings", adminAuthMiddleware(h.UpdateSettings))
+		r.Get("/admin/activity", adminAuthMiddleware(h.GetActivity))
 		r.Get("/coverage", h.CoverageReport)
 		r.Post("/token", h.GenerateToken)                 // public
 		r.Post("/secret", jwtAuthMiddleware(h.SetSecret)) // protected: change secret
