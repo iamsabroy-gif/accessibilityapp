@@ -38,7 +38,7 @@ func NewRouter(h *Handler, logger *zap.Logger) *chi.Mux {
 		// Rate-limit the expensive scan/score endpoints & public lead capture
 		r.Group(func(r chi.Router) {
 			r.Use(rateLimitMiddleware())
-			r.Post("/leads", h.CaptureLead) // public + rate-limited
+			r.Post("/leads", h.CaptureLead)  // public + rate-limited
 			r.Post("/visit", h.CaptureVisit) // public + rate-limited
 			r.Post("/scan", jwtAuthMiddleware(h.Scan))
 			r.Post("/scan/client", jwtAuthMiddleware(h.ScanClient))
@@ -86,6 +86,12 @@ func NewRouter(h *Handler, logger *zap.Logger) *chi.Mux {
 	r.Get("/app", func(w http.ResponseWriter, req *http.Request) {
 		w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
 		http.ServeFile(w, req, filepath.Join(frontendDir, "index.html"))
+	})
+
+	// Admin console lives at /admin
+	r.Get("/admin", func(w http.ResponseWriter, req *http.Request) {
+		w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
+		http.ServeFile(w, req, filepath.Join(frontendDir, "admin.html"))
 	})
 
 	r.Get("/*", func(w http.ResponseWriter, req *http.Request) {

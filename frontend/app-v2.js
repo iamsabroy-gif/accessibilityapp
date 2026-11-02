@@ -12,8 +12,6 @@
 const DEFAULT_API_BASE  = 'https://www.accessscan.in';
 const LS_KEY_TOKEN      = 'wacs_token';
 const LS_KEY_TOKEN_EXP  = 'wacs_token_exp';
-const LS_KEY_ADMIN_AUTH = 'wacs_admin_authed'; // flag: admin is unlocked this session
-const LS_KEY_ADMIN_TOKEN = 'wacs_admin_token';
 const LS_KEY_SCAN_MODE   = 'wacs_scan_mode'; // 'parallel' or 'serial'
 
 // Token refresh buffer — refresh when less than this time remains (ms)
@@ -1931,33 +1929,10 @@ function triggerAdminClick() {
   clearTimeout(adminClickTimer);
   if (adminClickCount >= 5) {
     adminClickCount = 0;
-    openAdminPasswordModal();
+    window.location.href = '/admin';
   } else {
     adminClickTimer = setTimeout(() => { adminClickCount = 0; }, 3000);
   }
-}
-
-function openAdminPasswordModal() {
-  const modal = $('admin-password-modal');
-  const input = $('admin-password-input');
-  const errEl = $('admin-password-error');
-  if (!modal) return;
-  errEl.textContent = '';
-  input.value = '';
-  modal.classList.add('open');
-  modal.setAttribute('aria-hidden', 'false');
-  modal.removeAttribute('inert');
-  setTimeout(() => input.focus(), 100);
-  document.body.style.overflow = 'hidden';
-}
-
-function closeAdminPasswordModal() {
-  const modal = $('admin-password-modal');
-  if (!modal) return;
-  modal.classList.remove('open');
-  modal.setAttribute('aria-hidden', 'true');
-  modal.setAttribute('inert', '');
-  document.body.style.overflow = '';
 }
 
 // ─── App Registration Helpers ─────────────────────────────────
@@ -1991,273 +1966,7 @@ function closeAppRegisterModal() {
   document.body.style.overflow = '';
 }
 
-async function submitAdminPassword() {
-  const input   = $('admin-password-input');
-  const errEl   = $('admin-password-error');
-  const submitBtn = $('admin-password-submit');
-  const password = input?.value.trim();
 
-  if (!password) { errEl.textContent = 'Please enter a password.'; return; }
-
-  submitBtn.disabled   = true;
-  submitBtn.textContent = 'Verifying…';
-  errEl.textContent    = '';
-
-  try {
-    const res  = await fetch(`${apiBase()}/api/v1/admin/verify`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ password }),
-    });
-    const data = await res.json();
-
-    if (!res.ok) {
-      errEl.textContent = data.error || 'Incorrect password.';
-      submitBtn.disabled   = false;
-      submitBtn.textContent = 'Unlock';
-      return;
-    }
-
-    // Success — unlock admin
-    state.adminUnlocked = true;
-    state.adminToken = data.admin_token;
-    sessionStorage.setItem(LS_KEY_ADMIN_AUTH, '1');
-    sessionStorage.setItem(LS_KEY_ADMIN_TOKEN, data.admin_token);
-    closeAdminPasswordModal();
-    openAdminDrawer();
-  } catch (err) {
-    errEl.textContent    = `Error: ${err.message}`;
-    submitBtn.disabled   = false;
-    submitBtn.textContent = 'Unlock';
-  }
-}
-
-async function uploadCoverageReport() {
-  const input = $('coverage-file-input');
-  const status = $('coverage-upload-status');
-  const button = $('coverage-upload-btn');
-  const file = input?.files?.[0];
-  if (!file) { status.textContent = 'Choose an .xlsx file first.'; return; }
-  if (!file.name.toLowerCase().endsWith('.xlsx')) { status.textContent = 'Only .xlsx files are accepted.'; return; }
-  const form = new FormData();
-  form.append('report', file);
-  button.disabled = true;
-  status.textContent = 'Validating and uploading…';
-  try {
-    const res = await fetch(`${apiBase()}/api/v1/admin/coverage`, {
-      method: 'POST',
-      headers: { 'Authorization': `Bearer ${state.adminToken || ''}` },
-      body: form,
-    });
-    const text = await res.text();
-    let data;
-    try { data = JSON.parse(text); } catch (_) {
-      throw new Error(res.status === 429 ? 'Rate limited — please wait a minute and try again.' : `Server error (${res.status}): ${text.substring(0, 100)}`);
-    }
-    if (!res.ok) throw new Error(res.status === 401 ? 'Admin session expired. Unlock admin settings again.' : (data.error || 'Upload failed'));
-    status.textContent = `Uploaded ${data.entries?.length || 0} coverage entries successfully.`;
-    input.value = '';
-    state.coverageEntries = data.entries || [];
-  } catch (err) {
-    status.textContent = err.message;
-  } finally {
-    button.disabled = false;
-  }
-}
-
-async function loadAdminSettings() {
-  const input = $('admin-max-concurrent');
-  if (!input) return;
-  try {
-    const res = await fetch(`${apiBase()}/api/v1/admin/settings`, {
-      headers: { 'Authorization': `Bearer ${state.adminToken || ''}` }
-    });
-    if (!res.ok) return;
-    const data = await res.json();
-    input.value = data.max_concurrent_scans || 5;
-
-    // Reflect active scoring formula on the toggle buttons
-    const formula = data.scoring_formula || 'compliance';
-    $('score-formula-compliance')?.classList.toggle('active', formula === 'compliance');
-    $('score-formula-penalty')?.classList.toggle('active', formula === 'penalty');
-
-    // Reflect active scanner engine on the toggle buttons
-    const engine = data.active_engine || 'axe';
-    $('engine-axe')?.classList.toggle('active', engine === 'axe');
-    $('engine-native')?.classList.toggle('active', engine === 'native');
-
-    // Reflect PDF scanning visibility toggle
-    const pdfVisible = data.pdf_scanning_visible === true;
-    $('pdf-visible-on')?.classList.toggle('active', pdfVisible);
-    $('pdf-visible-off')?.classList.toggle('active', !pdfVisible);
-
-    // Reflect landing page toggle
-    const landingEnabled = data.landing_page_enabled === true;
-    $('landing-enabled-on')?.classList.toggle('active', landingEnabled);
-    $('landing-enabled-off')?.classList.toggle('active', !landingEnabled);
-  } catch (err) {
-    console.error('Failed to load settings', err);
-  }
-}
-
-async function loadAdminActivity() {
-  const status = $('admin-activity-status');
-  const body = document.querySelector('#admin-activity-table tbody');
-  if (!status || !body) return;
-  status.textContent = 'Loading…';
-  try {
-    const res = await fetch(`${apiBase()}/api/v1/admin/activity`, {
-      headers: { 'Authorization': `Bearer ${state.adminToken || ''}` }
-    });
-    if (!res.ok) throw new Error(res.status === 401 ? 'Admin session expired — unlock again.' : `Request failed (${res.status})`);
-    const { users } = await res.json();
-    body.replaceChildren(...users.map(u => {
-      const tr = document.createElement('tr');
-      // textContent only: emails are user-supplied.
-      [u.email, u.registered ? (u.source || '') : 'unregistered', (u.registered_at || '').slice(0, 10),
-       u.visit_days, u.total_visits, (u.last_seen || '').replace('T', ' ').replace('Z', '')].forEach((v, i) => {
-        const td = document.createElement('td');
-        td.textContent = v;
-        td.style.padding = '4px 6px';
-        if (i === 3 || i === 4) td.style.textAlign = 'right';
-        tr.appendChild(td);
-      });
-      return tr;
-    }));
-    status.textContent = `${users.filter(u => u.registered).length} registered, ${users.length} total emails`;
-  } catch (err) {
-    status.textContent = err.message;
-  }
-}
-
-function toggleScoringFormula(formula) {
-  $('score-formula-compliance')?.classList.toggle('active', formula === 'compliance');
-  $('score-formula-penalty')?.classList.toggle('active', formula === 'penalty');
-}
-
-function toggleActiveEngine(engine) {
-  $('engine-axe')?.classList.toggle('active', engine === 'axe');
-  $('engine-native')?.classList.toggle('active', engine === 'native');
-}
-
-function togglePDFVisibility(visible) {
-  $('pdf-visible-on')?.classList.toggle('active', visible);
-  $('pdf-visible-off')?.classList.toggle('active', !visible);
-}
-
-function toggleLandingEnabled(enabled) {
-  $('landing-enabled-on')?.classList.toggle('active', enabled);
-  $('landing-enabled-off')?.classList.toggle('active', !enabled);
-}
-
-function updateScanModeToggle() {
-  const mode = getScanMode();
-  $('scan-mode-serial')?.classList.toggle('active', mode === 'serial');
-  $('scan-mode-parallel')?.classList.toggle('active', mode === 'parallel');
-}
-
-function setScanMode(mode) {
-  localStorage.setItem(LS_KEY_SCAN_MODE, mode);
-  updateScanModeToggle();
-}
-
-async function saveAllSettings() {
-  const status = $('admin-overall-status');
-  const btn = $('admin-save-all');
-  if (!status || !btn) return;
-
-  const maxConcurrentInput = $('admin-max-concurrent');
-  const maxConcurrent = maxConcurrentInput ? parseInt(maxConcurrentInput.value, 10) : 5;
-
-  if (isNaN(maxConcurrent) || maxConcurrent < 1) {
-    status.textContent = 'Invalid Max Concurrent value';
-    status.className = 'upload-status error';
-    return;
-  }
-
-  const formula = $('score-formula-penalty')?.classList.contains('active') ? 'penalty' : 'compliance';
-  const engine = $('engine-native')?.classList.contains('active') ? 'native' : 'axe';
-  const pdfVisible = $('pdf-visible-on')?.classList.contains('active') === true;
-  const landingEnabled = $('landing-enabled-on')?.classList.contains('active') === true;
-
-  btn.disabled = true;
-  status.textContent = 'Saving settings...';
-  status.className = 'upload-status';
-
-  try {
-    const res = await fetch(`${apiBase()}/api/v1/admin/settings`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${state.adminToken || ''}`
-      },
-      body: JSON.stringify({
-        max_concurrent_scans: maxConcurrent,
-        scoring_formula: formula,
-        active_engine: engine,
-        pdf_scanning_visible: pdfVisible,
-        landing_page_enabled: landingEnabled
-      })
-    });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || 'Failed to save settings');
-    // Sync the PDF coming-soon card in the main UI immediately after save
-    const card = $('pdf-coming-soon');
-    if (card) {
-      card.hidden = !pdfVisible;
-      card.setAttribute('aria-hidden', pdfVisible ? 'false' : 'true');
-    }
-    status.textContent = 'All settings saved successfully!';
-    status.className = 'upload-status success';
-    setTimeout(() => { if (status.textContent === 'All settings saved successfully!') status.textContent = ''; }, 3000);
-  } catch (err) {
-    status.textContent = err.message;
-    status.className = 'upload-status error';
-  } finally {
-    btn.disabled = false;
-  }
-}
-
-function openAdminDrawer() {
-  const overlay = $('admin-overlay');
-  const drawer  = $('admin-drawer');
-
-  updateScanModeToggle();
-  updateAdminTokenStatus();
-  loadAdminSettings();
-  loadAdminActivity();
-
-  overlay.classList.add('open');
-  overlay.setAttribute('aria-hidden', 'false');
-  drawer.classList.add('open');
-  drawer.setAttribute('aria-hidden', 'false');
-  drawer.removeAttribute('inert');
-  document.body.style.overflow = 'hidden';
-}
-
-function closeAdminDrawer() {
-  $('admin-overlay').classList.remove('open');
-  $('admin-overlay').setAttribute('aria-hidden', 'true');
-  $('admin-drawer').classList.remove('open');
-  $('admin-drawer').setAttribute('aria-hidden', 'true');
-  $('admin-drawer').setAttribute('inert', '');
-  document.body.style.overflow = '';
-}
-
-function updateAdminTokenStatus() {
-  const dot  = $('token-status-dot');
-  const text = $('token-status-text');
-  const exp  = parseInt(localStorage.getItem(LS_KEY_TOKEN_EXP) || '0', 10);
-
-  if (state.token && Date.now() < exp) {
-    const mins       = Math.ceil((exp - Date.now()) / 60000);
-    dot.className    = 'token-dot ok';
-    text.textContent = `Session token active · expires in ${mins}m`;
-  } else {
-    dot.className    = 'token-dot idle';
-    text.textContent = 'No active session token';
-  }
-}
 
 
 
@@ -2420,47 +2129,6 @@ document.addEventListener('DOMContentLoaded', () => {
   // ── Admin trigger (5 clicks on hidden dot) ───────
   $('admin-trigger')?.addEventListener('click', triggerAdminClick);
 
-  // ── Admin password modal ─────────────────────────
-  $('admin-password-modal-overlay')?.addEventListener('click', closeAdminPasswordModal);
-  $('admin-password-cancel')?.addEventListener('click', closeAdminPasswordModal);
-  $('admin-password-submit')?.addEventListener('click', submitAdminPassword);
-  $('admin-password-input')?.addEventListener('keydown', e => {
-    if (e.key === 'Enter') submitAdminPassword();
-    if (e.key === 'Escape') closeAdminPasswordModal();
-  });
-
-  // ── Admin drawer ─────────────────────────────────
-  $('admin-overlay')?.addEventListener('click', closeAdminDrawer);
-  $('admin-drawer-close')?.addEventListener('click', closeAdminDrawer);
-  $('admin-activity-refresh')?.addEventListener('click', loadAdminActivity);
-
-  $('scan-mode-serial')?.addEventListener('click', () => setScanMode('serial'));
-  $('scan-mode-parallel')?.addEventListener('click', () => setScanMode('parallel'));
-  $('score-formula-compliance')?.addEventListener('click', () => toggleScoringFormula('compliance'));
-  $('score-formula-penalty')?.addEventListener('click', () => toggleScoringFormula('penalty'));
-  $('engine-axe')?.addEventListener('click', () => toggleActiveEngine('axe'));
-  $('engine-native')?.addEventListener('click', () => toggleActiveEngine('native'));
-  $('pdf-visible-off')?.addEventListener('click', () => togglePDFVisibility(false));
-  $('pdf-visible-on')?.addEventListener('click', () => togglePDFVisibility(true));
-  $('landing-enabled-off')?.addEventListener('click', () => toggleLandingEnabled(false));
-  $('landing-enabled-on')?.addEventListener('click', () => toggleLandingEnabled(true));
-  $('admin-save-all')?.addEventListener('click', saveAllSettings);
-
-  $('coverage-upload-btn')?.addEventListener('click', uploadCoverageReport);
-  $('admin-refresh-token')?.addEventListener('click', async () => {
-    localStorage.removeItem(LS_KEY_TOKEN);
-    localStorage.removeItem(LS_KEY_TOKEN_EXP);
-    state.token = null;
-    await ensureToken();
-    updateAdminTokenStatus();
-    scheduleTokenRenewal();
-  });
-
-  // ── Keyboard: Escape closes any open panel ────────
-  document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape') { closeAdminDrawer(); closeAdminPasswordModal(); }
-  });
-
   // ── Init ─────────────────────────────────────────
   setView('hero');
 
@@ -2470,12 +2138,6 @@ document.addEventListener('DOMContentLoaded', () => {
   window.addEventListener('hashchange', () => {
     if (window.location.hash === '#coverage') showCoverage();
   });
-
-  // Restore admin session if unlocked earlier this browser session
-  if (sessionStorage.getItem(LS_KEY_ADMIN_AUTH) === '1') {
-    state.adminUnlocked = true;
-    state.adminToken = sessionStorage.getItem(LS_KEY_ADMIN_TOKEN);
-  }
 
   // Eagerly fetch a session token on page load (fully transparent to the user)
   ensureToken().then(ok => {

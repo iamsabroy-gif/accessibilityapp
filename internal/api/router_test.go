@@ -44,7 +44,16 @@ func TestRouterLandingPageToggle(t *testing.T) {
 		t.Errorf("expected status 200 for GET /app, got %d", w3.Code)
 	}
 
-	// Test 4: API routes remain unaffected
+	// Test 4: GET /admin always serves admin.html (status 200)
+	reqAdmin := httptest.NewRequest("GET", "/admin", nil)
+	wAdmin := httptest.NewRecorder()
+	router.ServeHTTP(wAdmin, reqAdmin)
+
+	if wAdmin.Code != http.StatusOK {
+		t.Errorf("expected status 200 for GET /admin, got %d", wAdmin.Code)
+	}
+
+	// Test 5: API routes remain unaffected
 	req4 := httptest.NewRequest("GET", "/api/v1/health", nil)
 	w4 := httptest.NewRecorder()
 	router.ServeHTTP(w4, req4)

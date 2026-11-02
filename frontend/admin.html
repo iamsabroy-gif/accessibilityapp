@@ -1,0 +1,566 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="robots" content="noindex, nofollow" />
+  <title>Admin Console — AccessScan</title>
+  <link rel="stylesheet" href="style-v2.css" />
+  <link rel="stylesheet" href="admin.css" />
+  <script src="admin.js" defer></script>
+</head>
+<body class="admin-body">
+  <!-- Skip link for keyboard navigation -->
+  <a href="#main" class="skip-link">Skip to main content</a>
+
+  <!-- Global live regions for screen readers -->
+  <div id="admin-live" class="sr-only" aria-live="polite" aria-atomic="true"></div>
+  <div id="admin-session-live" class="sr-only" aria-live="polite" aria-atomic="true"></div>
+
+  <!-- Header -->
+  <header class="admin-header">
+    <div class="admin-header-inner">
+      <div class="admin-brand">
+        <a href="/app" class="admin-back-btn" aria-label="Back to Accessibility Scanner">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+            <line x1="19" y1="12" x2="5" y2="12"></line>
+            <polyline points="12 19 5 12 12 5"></polyline>
+          </svg>
+          <span>Scanner</span>
+        </a>
+        <div class="admin-title-wrap">
+          <h1 class="admin-page-title">Admin Console</h1>
+          <span class="admin-badge">Admin</span>
+        </div>
+      </div>
+
+      <div id="admin-session-bar" class="admin-session-bar hidden">
+        <div class="session-timer-text">
+          <span>Session: <strong id="session-time" aria-hidden="true">--:--</strong> remaining</span>
+        </div>
+        <button id="btn-extend-session" type="button" class="btn-xs-secondary">Extend</button>
+        <button id="btn-sign-out" type="button" class="btn-xs-secondary">Sign out</button>
+      </div>
+    </div>
+  </header>
+
+  <!-- Non-blocking Session Expiring Warning Banner -->
+  <div id="session-warning-banner" class="session-warning-banner hidden" role="status" aria-live="polite">
+    <div class="session-warning-inner">
+      <span class="warning-text">⚠️ Your session expires in <strong id="session-warning-time">2 minutes</strong>.</span>
+      <button id="btn-banner-extend" type="button" class="btn-sm-primary">Extend session</button>
+    </div>
+  </div>
+
+  <!-- Toast Notification Region -->
+  <div id="toast-region" class="admin-toast-region" role="status" aria-live="polite"></div>
+
+  <!-- ═══════════════════════════════════════
+       LOGIN VIEW (Unauthenticated state)
+  ═══════════════════════════════════════ -->
+  <div id="admin-login-view" class="admin-login-view">
+    <div class="admin-login-card">
+      <div class="login-header">
+        <div class="modal-icon" aria-hidden="true">🔐</div>
+        <h2>Admin Authentication</h2>
+        <p class="login-subtitle">Enter the admin password to access configuration, telemetry, and reporting.</p>
+      </div>
+
+      <form id="admin-login-form" novalidate>
+        <div class="form-group">
+          <label for="admin-login-password" class="form-label">Admin password</label>
+          <input
+            id="admin-login-password"
+            type="password"
+            name="password"
+            placeholder="Enter password"
+            autocomplete="current-password"
+            spellcheck="false"
+            required
+            class="modal-input"
+          />
+          <p id="admin-login-error" class="modal-error" role="alert" aria-live="polite"></p>
+        </div>
+        <button id="admin-login-submit" type="submit" class="modal-btn-primary btn-block">
+          Unlock Console
+        </button>
+      </form>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════
+       ADMIN CONSOLE (Authenticated state)
+  ═══════════════════════════════════════ -->
+  <div id="admin-app" class="admin-app hidden">
+    <!-- Top Nav / Tab List -->
+    <nav class="admin-nav" aria-label="Admin sections">
+      <div class="admin-container">
+        <div role="tablist" class="admin-tablist" aria-label="Admin console sections">
+          <button
+            role="tab"
+            id="tab-settings"
+            aria-selected="true"
+            aria-controls="panel-settings"
+            tabindex="0"
+            class="admin-tab active"
+          >
+            Settings
+          </button>
+          <button
+            role="tab"
+            id="tab-activity"
+            aria-selected="false"
+            aria-controls="panel-activity"
+            tabindex="-1"
+            class="admin-tab"
+          >
+            Activity
+          </button>
+          <button
+            role="tab"
+            id="tab-coverage"
+            aria-selected="false"
+            aria-controls="panel-coverage"
+            tabindex="-1"
+            class="admin-tab"
+          >
+            Coverage
+          </button>
+        </div>
+      </div>
+    </nav>
+
+    <!-- Main Content Panels -->
+    <main id="main" class="admin-main">
+      <div class="admin-container">
+
+        <!-- ──────────────────────────────────────────
+             PANEL 1: SETTINGS
+        ────────────────────────────────────────── -->
+        <section
+          role="tabpanel"
+          id="panel-settings"
+          aria-labelledby="tab-settings"
+          class="admin-panel"
+        >
+          <div class="panel-header">
+            <div>
+              <h2 class="panel-title">Scanner &amp; Server Settings</h2>
+              <p class="panel-subtitle">Configure runtime engine, scoring formulas, concurrency, and public site flags.</p>
+            </div>
+            <button id="btn-reload-settings" type="button" class="btn-sm-secondary">Reload Settings</button>
+          </div>
+
+          <div id="settings-status-box" class="settings-status-box hidden" role="status" aria-live="polite"></div>
+
+          <form id="settings-form" class="settings-form" aria-busy="true" novalidate>
+            <!-- Group 1: Scanning -->
+            <fieldset class="admin-fieldset" id="fs-scanning">
+              <legend class="admin-legend">Scanning Engine &amp; Concurrency</legend>
+
+              <div class="setting-item">
+                <span class="setting-label" id="label-active-engine">Scanner Engine</span>
+                <p class="field-hint" id="hint-active-engine">
+                  <strong>Axe Core:</strong> Production engine using Deque's axe-core and custom heuristics.<br>
+                  <strong>Native Validation:</strong> Experimental internal evaluation module.
+                </p>
+                <div class="segmented-control" role="radiogroup" aria-labelledby="label-active-engine">
+                  <label class="segmented-option">
+                    <input type="radio" name="active_engine" value="axe" checked />
+                    <span>Axe Core</span>
+                  </label>
+                  <label class="segmented-option">
+                    <input type="radio" name="active_engine" value="native" />
+                    <span>Native Validation</span>
+                  </label>
+                </div>
+              </div>
+
+              <div class="setting-item">
+                <label for="admin-max-concurrent" class="setting-label">Max Concurrent Scans</label>
+                <p class="field-hint" id="hint-concurrent">
+                  Controls global backend scan concurrency across all parallel requests (1–100).
+                </p>
+                <div class="field-row">
+                  <input
+                    id="admin-max-concurrent"
+                    name="max_concurrent_scans"
+                    type="number"
+                    min="1"
+                    max="100"
+                    step="1"
+                    required
+                    class="modal-input field-narrow"
+                    aria-describedby="hint-concurrent error-concurrent"
+                  />
+                  <span id="error-concurrent" class="field-inline-error" role="alert"></span>
+                </div>
+              </div>
+            </fieldset>
+
+            <!-- Group 2: Scoring -->
+            <fieldset class="admin-fieldset" id="fs-scoring">
+              <legend class="admin-legend">Scoring Formula</legend>
+
+              <div class="setting-item">
+                <span class="setting-label" id="label-scoring-formula">Formula Calculation</span>
+                <p class="field-hint" id="hint-scoring-formula">
+                  <strong>Compliance-Aligned:</strong> score = pass-rules ÷ total-rules × 100.<br>
+                  <strong>Penalty-Based:</strong> score = 100 − Σ penalties (critical −20, serious −10, moderate −5, minor −2).
+                </p>
+                <div class="segmented-control" role="radiogroup" aria-labelledby="label-scoring-formula">
+                  <label class="segmented-option">
+                    <input type="radio" name="scoring_formula" value="compliance" checked />
+                    <span>Compliance-Aligned</span>
+                  </label>
+                  <label class="segmented-option">
+                    <input type="radio" name="scoring_formula" value="penalty" />
+                    <span>Penalty-Based</span>
+                  </label>
+                </div>
+              </div>
+            </fieldset>
+
+            <!-- Group 3: Public Site -->
+            <fieldset class="admin-fieldset" id="fs-public">
+              <legend class="admin-legend">Public Site &amp; Feature Flags</legend>
+
+              <div class="setting-item">
+                <span class="setting-label" id="label-landing-page">Landing Page at Root (/)</span>
+                <p class="field-hint">
+                  Controls what <code>/</code> serves: marketing landing page or scanner directly. Scanner is always available at <code>/app</code>.<br>
+                  <span class="runtime-note">Runtime override; resets on server restart to env value.</span>
+                </p>
+                <div class="segmented-control" role="radiogroup" aria-labelledby="label-landing-page">
+                  <label class="segmented-option">
+                    <input type="radio" name="landing_page_enabled" value="false" checked />
+                    <span>Scan App</span>
+                  </label>
+                  <label class="segmented-option">
+                    <input type="radio" name="landing_page_enabled" value="true" />
+                    <span>Landing Page</span>
+                  </label>
+                </div>
+              </div>
+
+              <div class="setting-item">
+                <span class="setting-label" id="label-pdf-visible">PDF Scanning (Coming Soon) Card</span>
+                <p class="field-hint">
+                  Toggles visibility of the &ldquo;PDF scanning coming soon / early access&rdquo; demo card in the public scanner.
+                </p>
+                <div class="segmented-control" role="radiogroup" aria-labelledby="label-pdf-visible">
+                  <label class="segmented-option">
+                    <input type="radio" name="pdf_scanning_visible" value="false" checked />
+                    <span>Hidden</span>
+                  </label>
+                  <label class="segmented-option">
+                    <input type="radio" name="pdf_scanning_visible" value="true" />
+                    <span>Visible</span>
+                  </label>
+                </div>
+              </div>
+            </fieldset>
+
+            <!-- Group 4: Local Browser Scope Only -->
+            <fieldset class="admin-fieldset local-scope-fieldset" id="fs-browser-local">
+              <legend class="admin-legend">This Browser Only <span class="badge-subtle">Client-local</span></legend>
+              <p class="field-hint">Saved immediately to localStorage in this browser. Not sent to server.</p>
+
+              <div class="setting-item">
+                <span class="setting-label" id="label-scan-mode">Link Scan Mode</span>
+                <p class="field-hint">
+                  <strong>Serial:</strong> Scans linked pages one by one (low memory).<br>
+                  <strong>Parallel:</strong> Scans concurrently (faster, higher RAM).
+                </p>
+                <div class="segmented-control" role="radiogroup" aria-labelledby="label-scan-mode">
+                  <label class="segmented-option">
+                    <input type="radio" name="scan_mode" value="serial" checked />
+                    <span>Serial (Free tier)</span>
+                  </label>
+                  <label class="segmented-option">
+                    <input type="radio" name="scan_mode" value="parallel" />
+                    <span>Parallel (Paid tier)</span>
+                  </label>
+                </div>
+              </div>
+            </fieldset>
+
+            <!-- Sticky Action Bar -->
+            <div class="settings-action-bar" role="region" aria-label="Settings save actions">
+              <div class="action-bar-content">
+                <div class="dirty-status" id="settings-dirty-status" aria-live="polite">
+                  <span class="status-dot clean" id="status-dot" aria-hidden="true"></span>
+                  <span id="dirty-status-text">All settings saved</span>
+                </div>
+                <div class="action-bar-btns">
+                  <button type="button" id="btn-discard-settings" class="modal-btn-secondary" disabled>
+                    Discard Changes
+                  </button>
+                  <button type="submit" id="btn-save-settings" class="modal-btn-primary" disabled>
+                    Save Settings
+                  </button>
+                </div>
+              </div>
+            </div>
+          </form>
+        </section>
+
+        <!-- ──────────────────────────────────────────
+             PANEL 2: ACTIVITY
+        ────────────────────────────────────────── -->
+        <section
+          role="tabpanel"
+          id="panel-activity"
+          aria-labelledby="tab-activity"
+          class="admin-panel"
+          hidden
+        >
+          <div class="panel-header">
+            <div>
+              <h2 class="panel-title">User Activity &amp; Telemetry</h2>
+              <p class="panel-subtitle">Lead capture signups joined with return visit pings.</p>
+            </div>
+            <div class="panel-header-actions">
+              <button id="btn-refresh-activity" type="button" class="btn-sm-secondary">
+                Refresh
+              </button>
+              <button id="btn-export-csv" type="button" class="btn-sm-secondary">
+                Export CSV
+              </button>
+            </div>
+          </div>
+
+          <!-- Summary Metric Ribbon -->
+          <div id="activity-summary-ribbon" class="activity-summary-ribbon" aria-live="polite">
+            <span class="summary-metric"><strong id="metric-total-users">0</strong> total users</span>
+            <span class="summary-sep" aria-hidden="true">·</span>
+            <span class="summary-metric"><strong id="metric-registered-users">0</strong> registered</span>
+            <span class="summary-sep" aria-hidden="true">·</span>
+            <span class="summary-metric"><strong id="metric-unregistered-users">0</strong> unregistered</span>
+            <span class="summary-sep" aria-hidden="true">·</span>
+            <span class="summary-metric"><strong id="metric-total-visits">0</strong> visits</span>
+            <span class="summary-update-time" id="activity-updated-time"></span>
+          </div>
+
+          <!-- Filter Toolbar -->
+          <div class="activity-toolbar">
+            <div class="search-wrap">
+              <label for="activity-search-input" class="sr-only">Filter by email or source</label>
+              <input
+                type="search"
+                id="activity-search-input"
+                placeholder="Filter by email or source…"
+                class="modal-input search-input"
+              />
+            </div>
+
+            <div class="filters-row">
+              <div class="filter-group">
+                <label for="filter-status-select" class="sr-only">Status filter</label>
+                <select id="filter-status-select" class="admin-select">
+                  <option value="all">All statuses</option>
+                  <option value="registered">Registered</option>
+                  <option value="unregistered">Unregistered</option>
+                </select>
+              </div>
+
+              <div class="filter-group">
+                <label for="filter-source-select" class="sr-only">Source filter</label>
+                <select id="filter-source-select" class="admin-select">
+                  <option value="all">All sources</option>
+                </select>
+              </div>
+
+              <div class="filter-group">
+                <label for="filter-month-input" class="sr-only">Filter by month</label>
+                <input
+                  type="month"
+                  id="filter-month-input"
+                  class="admin-select month-input"
+                  title="Filter by month (YYYY-MM)"
+                  placeholder="YYYY-MM"
+                />
+              </div>
+
+              <button type="button" id="btn-clear-filters" class="btn-xs-secondary hidden">
+                Clear filters
+              </button>
+            </div>
+          </div>
+
+          <!-- Mobile Sort Selector (Hidden on desktop, shown on mobile) -->
+          <div class="mobile-sort-control">
+            <label for="mobile-sort-select" class="mobile-sort-label">Sort by:</label>
+            <select id="mobile-sort-select" class="admin-select">
+              <option value="last_seen-desc">Last seen (Newest first)</option>
+              <option value="last_seen-asc">Last seen (Oldest first)</option>
+              <option value="email-asc">Email (A–Z)</option>
+              <option value="email-desc">Email (Z–A)</option>
+              <option value="source-asc">Source (A–Z)</option>
+              <option value="registered_at-desc">Registered (Newest first)</option>
+              <option value="visit_days-desc">Days (High to Low)</option>
+              <option value="total_visits-desc">Visits (High to Low)</option>
+            </select>
+          </div>
+
+          <!-- Table Wrapper (Scrollable region with sticky header) -->
+          <div
+            id="activity-table-container"
+            class="activity-table-container"
+            role="region"
+            tabindex="0"
+            aria-label="Activity table (scrollable)"
+          >
+            <table id="activity-table" class="activity-table" role="table">
+              <caption class="sr-only">User activity and visit history</caption>
+              <thead role="rowgroup">
+                <tr role="row">
+                  <th scope="col" role="columnheader" aria-sort="none" data-col="email">
+                    <button type="button" class="th-sort-btn">Email</button>
+                  </th>
+                  <th scope="col" role="columnheader" aria-sort="none" data-col="source">
+                    <button type="button" class="th-sort-btn">Source</button>
+                  </th>
+                  <th scope="col" role="columnheader" aria-sort="none" data-col="registered_at">
+                    <button type="button" class="th-sort-btn">Registered</button>
+                  </th>
+                  <th scope="col" role="columnheader" aria-sort="none" data-col="visit_days" class="num">
+                    <button type="button" class="th-sort-btn">Days</button>
+                  </th>
+                  <th scope="col" role="columnheader" aria-sort="none" data-col="total_visits" class="num">
+                    <button type="button" class="th-sort-btn">Visits</button>
+                  </th>
+                  <th scope="col" role="columnheader" aria-sort="descending" data-col="last_seen">
+                    <button type="button" class="th-sort-btn">Last seen</button>
+                  </th>
+                </tr>
+              </thead>
+              <tbody id="activity-tbody" role="rowgroup"></tbody>
+            </table>
+
+            <!-- Empty / Loading / Error states -->
+            <div id="activity-state-message" class="activity-state-message hidden" role="status"></div>
+          </div>
+
+          <!-- Pagination Bar -->
+          <nav class="activity-pagination" aria-label="Activity table pages">
+            <button type="button" id="btn-page-prev" class="btn-sm-secondary" disabled>
+              ← Previous
+            </button>
+            <span id="pagination-status" class="pagination-status" aria-live="polite">
+              Page 1 of 1
+            </span>
+            <button type="button" id="btn-page-next" class="btn-sm-secondary" disabled>
+              Next →
+            </button>
+          </nav>
+
+          <p class="pii-notice">
+            🔒 <strong>PII &amp; Privacy Notice:</strong> Emails and activity records are confidential. Exported CSVs are generated locally in your browser and contain user data.
+          </p>
+        </section>
+
+        <!-- ──────────────────────────────────────────
+             PANEL 3: COVERAGE
+        ────────────────────────────────────────── -->
+        <section
+          role="tabpanel"
+          id="panel-coverage"
+          aria-labelledby="tab-coverage"
+          class="admin-panel"
+          hidden
+        >
+          <div class="panel-header">
+            <div>
+              <h2 class="panel-title">WCAG Coverage Report Upload</h2>
+              <p class="panel-subtitle">Upload updated rule mapping spreadsheets to refresh the public coverage view.</p>
+            </div>
+          </div>
+
+          <div class="coverage-card">
+            <div class="coverage-upload-box">
+              <label for="coverage-file-input" class="setting-label">Coverage Spreadsheet File (.xlsx)</label>
+              <p class="field-hint">
+                Select an Excel workbook containing rule IDs, WCAG success criteria tags, and implementation statuses. Must match the structure of <code>wcag_coverage_report.xlsx</code>.
+              </p>
+              <div class="file-input-wrapper">
+                <input
+                  id="coverage-file-input"
+                  type="file"
+                  accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                  class="file-input"
+                />
+              </div>
+              <div class="upload-btn-row">
+                <button id="coverage-upload-btn" class="modal-btn-primary" type="button">
+                  Upload Coverage XLSX
+                </button>
+              </div>
+              <div id="coverage-upload-status" class="upload-status-box" role="status" aria-live="polite"></div>
+            </div>
+          </div>
+        </section>
+
+      </div>
+    </main>
+  </div>
+
+  <!-- ═══════════════════════════════════════
+       DIALOG: RE-AUTHENTICATION
+       Triggered on 401 or session expiry
+  ═══════════════════════════════════════ -->
+  <dialog id="reauth-dialog" class="admin-dialog" aria-labelledby="reauth-dialog-title">
+    <div class="dialog-box">
+      <div class="dialog-header">
+        <span class="modal-icon" aria-hidden="true">⏳</span>
+        <div>
+          <h3 id="reauth-dialog-title" class="dialog-title">Session Expired</h3>
+          <p class="dialog-subtitle">Enter your admin password to continue without losing unsaved changes.</p>
+        </div>
+      </div>
+      <form id="reauth-form" method="dialog" novalidate>
+        <div class="dialog-body">
+          <label for="reauth-password" class="form-label">Admin password</label>
+          <input
+            id="reauth-password"
+            type="password"
+            name="password"
+            placeholder="Admin password"
+            autocomplete="current-password"
+            required
+            class="modal-input"
+          />
+          <p id="reauth-error" class="modal-error" role="alert" aria-live="polite"></p>
+        </div>
+        <div class="dialog-footer">
+          <button type="button" id="btn-reauth-cancel" class="modal-btn-secondary">Cancel &amp; Sign out</button>
+          <button type="submit" id="btn-reauth-submit" class="modal-btn-primary">Unlock Session</button>
+        </div>
+      </form>
+    </div>
+  </dialog>
+
+  <!-- ═══════════════════════════════════════
+       DIALOG: CONFIRM RISKY SETTINGS SAVE
+  ═══════════════════════════════════════ -->
+  <dialog id="confirm-dialog" class="admin-dialog" aria-labelledby="confirm-dialog-title">
+    <div class="dialog-box">
+      <div class="dialog-header">
+        <span class="modal-icon" aria-hidden="true">⚠️</span>
+        <div>
+          <h3 id="confirm-dialog-title" class="dialog-title">Confirm Configuration Change</h3>
+          <p class="dialog-subtitle">The following settings modify public site behavior or score evaluations:</p>
+        </div>
+      </div>
+      <div class="dialog-body">
+        <ul id="confirm-changes-list" class="changes-list"></ul>
+      </div>
+      <div class="dialog-footer">
+        <button type="button" id="btn-confirm-cancel" class="modal-btn-secondary">Cancel</button>
+        <button type="button" id="btn-confirm-ok" class="modal-btn-primary">Confirm &amp; Save</button>
+      </div>
+    </div>
+  </dialog>
+
+</body>
+</html>

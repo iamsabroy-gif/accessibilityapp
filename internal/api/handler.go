@@ -8,13 +8,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
+	"net/mail"
 	"net/url"
 	"path/filepath"
 	"sort"
 	"strings"
-	"net"
-	"net/mail"
 	"sync"
 	"time"
 
@@ -442,6 +442,10 @@ func (h *Handler) UpdateSettings(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body", err.Error())
+		return
+	}
+	if req.MaxConcurrentScans < 0 || req.MaxConcurrentScans > 100 {
+		writeError(w, http.StatusBadRequest, "max_concurrent_scans must be between 1 and 100", "")
 		return
 	}
 	if req.MaxConcurrentScans > 0 {
