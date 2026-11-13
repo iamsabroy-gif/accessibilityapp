@@ -9,3 +9,9 @@ node_modules/
 
 # Claude
 CLAUDE.md
+
+# Build output
+/server
+
+# Runtime data (leads, visits, stored scan results)
+/data/
