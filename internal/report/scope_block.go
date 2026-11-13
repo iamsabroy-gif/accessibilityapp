@@ -49,10 +49,20 @@ func ScopeBlockHTML(cr *models.ComplianceReport) template.HTML {
 	if scanLevel == "" {
 		scanLevel = "AA"
 	}
+	pages := ""
+	if len(cr.PagesScanned) > 1 {
+		items := ""
+		for _, p := range cr.PagesScanned {
+			items += "<li>" + template.HTMLEscapeString(p) + "</li>"
+		}
+		pages = fmt.Sprintf(`<tr><th>Pages Covered (%d)</th><td><ul style="margin:0;padding-left:18px;">%s</ul></td></tr>`,
+			len(cr.PagesScanned), items)
+	}
 	return template.HTML(fmt.Sprintf(`
     <div class="scope-block">
         <h3>Scope &amp; Limitations</h3>
         <table>
+            %s
             <tr><th>Scan WCAG Level</th><td>%s</td></tr>
             <tr><th>Total Success Criteria in Report</th><td>%d</td></tr>
             <tr><th>Evaluated (automated test data)</th><td>%d</td></tr>
@@ -64,6 +74,7 @@ func ScopeBlockHTML(cr *models.ComplianceReport) template.HTML {
             results; these rows are distinct from <em>Not Evaluated</em> (no automation exists).
         </p>
     </div>`,
+		pages,
 		template.HTMLEscapeString(scanLevel),
 		cr.TotalSCs,
 		cr.EvaluatedSCs,

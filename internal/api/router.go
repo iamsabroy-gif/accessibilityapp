@@ -33,6 +33,8 @@ func NewRouter(h *Handler, logger *zap.Logger) *chi.Mux {
 		r.Post("/admin/settings", adminAuthMiddleware(h.UpdateSettings))
 		r.Get("/admin/activity", adminAuthMiddleware(h.GetActivity))
 		r.Get("/coverage", h.CoverageReport)
+		r.Get("/crawl/{id}", h.GetCrawl)                  // public: progress of a multi-page scan (polled)
+		r.Post("/crawl/{id}/cancel", h.CancelCrawl)       // public: stop a multi-page scan
 		r.Post("/token", h.GenerateToken)                 // public
 		r.Post("/secret", jwtAuthMiddleware(h.SetSecret)) // protected: change secret
 		r.Get("/secret", jwtAuthMiddleware(h.GetSecret))  // protected: retrieve secret (dev/ops only)
@@ -43,6 +45,7 @@ func NewRouter(h *Handler, logger *zap.Logger) *chi.Mux {
 			r.Post("/leads", h.CaptureLead)  // public + rate-limited
 			r.Post("/visit", h.CaptureVisit) // public + rate-limited
 			r.Post("/scan", jwtAuthMiddleware(h.Scan))
+			r.Post("/crawl", jwtAuthMiddleware(h.StartCrawl))
 			r.Post("/scan/client", jwtAuthMiddleware(h.ScanClient))
 			r.Post("/score", jwtAuthMiddleware(h.ScoreOnly))
 			for name := range reportSpecs {

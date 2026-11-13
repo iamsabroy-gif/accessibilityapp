@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Web Accessibility Scanner",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Scan live, authenticated, and local web pages for WCAG 2.1 accessibility violations using the native accessibility engine.",
   "permissions": [
     "activeTab",

@@ -125,6 +125,92 @@ paths:
         '404':
           description: Visit tracking feature disabled
 
+  /api/v1/crawl:
+    post:
+      summary: Start a multi-page scan (start page plus up to 10 same-site linked pages)
+      description: >
+        Runs in the background on the server. Poll GET /api/v1/crawl/{id} for progress and
+        fetch each page's result from GET /api/v1/report/{scan_id}. Pass crawl_id to any
+        POST /api/v1/report/* endpoint for one report covering every scanned page.
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [url]
+              properties:
+                url:
+                  type: string
+                parallel:
+                  type: boolean
+                  description: Scan linked pages concurrently, up to the server's concurrent-scan limit.
+      responses:
+        '202':
+          description: Crawl started; body is the crawl progress object
+  /api/v1/crawl/{id}:
+    get:
+      summary: Progress of a multi-page scan
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Crawl progress
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  crawl_id:
+                    type: string
+                  url:
+                    type: string
+                  status:
+                    type: string
+                    enum: [scanning_main, scanning_pages, done, error, cancelled]
+                  main_scan_id:
+                    type: string
+                  error:
+                    type: string
+                  finished:
+                    type: integer
+                  total:
+                    type: integer
+                  pages:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        url:
+                          type: string
+                        status:
+                          type: string
+                          enum: [queued, scanning, done, error, timeout]
+                        scan_id:
+                          type: string
+                        error:
+                          type: string
+        '404':
+          description: Crawl not found or expired
+  /api/v1/crawl/{id}/cancel:
+    post:
+      summary: Stop a multi-page scan
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Crawl progress after cancellation
+
   /api/v1/report/ada:
     post:
       summary: Generate ADA Title III Report
@@ -139,6 +225,12 @@ paths:
               properties:
                 url:
                   type: string
+                scan_id:
+                  type: string
+                  description: Build the report from this stored scan instead of scanning again.
+                crawl_id:
+                  type: string
+                  description: Build one report covering every page of this multi-page scan.
                 format:
                   type: string
                   enum: [html, pdf]

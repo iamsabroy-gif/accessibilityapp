@@ -223,10 +223,16 @@ function setDownloadButtonsDisabled(disabled) {
 
 // ─── Scan ──────────────────────────────────────────────────────
 async function runScan(url, wcagLevel, depth = 0, shouldGenerateReport = false, reportMeta = null, reportStandard = 'ada', reportFormat = 'html') {
+  // Multi-page scans run as a job on the server; this page only follows progress.
+  if (depth === 1) {
+    return runCrawl(url, { shouldGenerateReport, reportMeta, reportStandard, reportFormat });
+  }
+
+  stopFollowingCrawl();
   setView('loading');
   $('loading-url').textContent = url;
   const depthMsg = $('loading-depth-msg');
-  if (depthMsg) depthMsg.textContent = depth === 1 ? 'Scanning main page…' : '';
+  if (depthMsg) depthMsg.textContent = '';
   hideError();
 
   const ok = await ensureToken();
@@ -259,7 +265,7 @@ async function runScan(url, wcagLevel, depth = 0, shouldGenerateReport = false, 
     renderResults(data);
     setView('results');
     scheduleTokenRenewal();
-    
+
     // Auto-generate compliance report if requested
     if (shouldGenerateReport && reportMeta) {
       // Small delay to let the results view render first
@@ -268,39 +274,93 @@ async function runScan(url, wcagLevel, depth = 0, shouldGenerateReport = false, 
       }, 500);
     }
 
-    // If depth=1, scan discovered links in parallel from the frontend
-    const links = data.discovered_links || [];
-    if (depth === 1 && links.length > 0) {
-      setDownloadButtonsDisabled(true);
-      scanDiscoveredLinks(links, wcagLevel).finally(() => {
-        setDownloadButtonsDisabled(false);
-        // Reveal Impacted Components only after all child scans have finished
-        revealScreenshotSection(data);
-      });
-    } else {
-      setDownloadButtonsDisabled(false);
-      // No child scans — reveal immediately
-      revealScreenshotSection(data);
-    }
+    setDownloadButtonsDisabled(false);
+    revealScreenshotSection(data);
   } catch (err) {
     showError(`Scan error: ${err.message}`);
     setView('hero');
   }
 }
 
-async function scanDiscoveredLinks(links, wcagLevel) {
-  const TIMEOUT_MS = 3 * 60 * 1000;
+// ─── Multi-page scan (server-side crawl) ──────────────────────
+// The server scans the start page and its linked pages as one job. The job ID
+// is remembered so that reloading or reopening the page resumes the same scan.
+const LS_KEY_CRAWL = 'wacs_crawl_job';
+const CRAWL_POLL_MS = 1500;
+let crawlFollowSeq = 0; // bumped to stop following the current crawl
+
+function rememberCrawl(id) {
+  try { localStorage.setItem(LS_KEY_CRAWL, id); } catch (_) {}
+}
+function forgetCrawl() {
+  try { localStorage.removeItem(LS_KEY_CRAWL); } catch (_) {}
+}
+
+// Stop following the active crawl (if any) and tell the server to stop scanning it.
+function stopFollowingCrawl() {
+  crawlFollowSeq++;
+  let id = null;
+  try { id = localStorage.getItem(LS_KEY_CRAWL); } catch (_) {}
+  if (id) {
+    fetch(`${apiBase()}/api/v1/crawl/${encodeURIComponent(id)}/cancel`, { method: 'POST' }).catch(() => {});
+    forgetCrawl();
+  }
+  setDownloadButtonsDisabled(false);
+}
+
+async function runCrawl(url, opts = {}) {
+  stopFollowingCrawl();
+  setView('loading');
+  $('loading-url').textContent = url;
+  const depthMsg = $('loading-depth-msg');
+  if (depthMsg) depthMsg.textContent = 'Scanning main page…';
+  hideError();
+
+  const ok = await ensureToken();
+  if (!ok) { setView('hero'); return; }
+
+  try {
+    const start = () => fetch(`${apiBase()}/api/v1/crawl`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${state.token}`,
+      },
+      body: JSON.stringify({ url, parallel: getScanMode() === 'parallel' }),
+    });
+
+    let res = await start();
+    if (res.status === 401) {
+      localStorage.removeItem(LS_KEY_TOKEN);
+      localStorage.removeItem(LS_KEY_TOKEN_EXP);
+      state.token = null;
+      const retried = await ensureToken();
+      if (!retried) { setView('hero'); return; }
+      res = await start();
+    }
+    const job = await res.json();
+    if (!res.ok) throw new Error(job.error || 'Scan failed');
+
+    rememberCrawl(job.crawl_id);
+    scheduleTokenRenewal();
+    await followCrawl(job.crawl_id, opts);
+  } catch (err) {
+    forgetCrawl();
+    showError(`Scan error: ${err.message}`);
+    setView('hero');
+  }
+}
+
+// Build the placeholder cards for a crawl's linked pages.
+function buildLinkedPageCards(pages) {
   const linkedSection = $('linked-pages-section');
   const linkedList    = $('linked-pages-list');
   const linkedCount   = $('linked-pages-count');
-  if (!linkedSection || !linkedList) return;
+  if (!linkedSection || !linkedList) return [];
 
-  const mode = getScanMode();
-
-  // Show section with loading placeholders
-  linkedCount.textContent = links.length;
+  if (linkedCount) linkedCount.textContent = pages.length;
   linkedList.innerHTML = '';
-  const cardStates = links.map((linkUrl) => {
+  const cards = pages.map((page) => {
     const card = document.createElement('article');
     card.className = 'linked-page-card linked-page-loading';
     card.innerHTML = `
@@ -309,84 +369,157 @@ async function scanDiscoveredLinks(links, wcagLevel) {
           <span class="linked-page-grade">…</span>
         </div>
         <div class="linked-page-info">
-          <div class="linked-page-url" title="${escapeHTML(linkUrl)}">${escapeHTML(linkUrl)}</div>
+          <div class="linked-page-url" title="${escapeHTML(page.url)}">${escapeHTML(page.url)}</div>
           <div class="linked-page-meta">
             <span class="linked-page-stat scanning">Queued…</span>
           </div>
         </div>
       </div>`;
     linkedList.appendChild(card);
-    return { url: linkUrl, card, done: false };
+    return { url: page.url, card, handled: false };
   });
   linkedSection.classList.remove('hidden');
+  return cards;
+}
 
-  const scanOne = async (entry) => {
-    // Update status to scanning (for serial mode where it was "Queued")
-    const statusEl = entry.card.querySelector('.linked-page-stat');
-    if (statusEl) statusEl.textContent = 'Scanning…';
+async function fetchStoredResult(scanId) {
+  const res = await fetch(`${apiBase()}/api/v1/report/${encodeURIComponent(scanId)}`);
+  if (!res.ok) throw new Error('Result not found or expired');
+  return res.json();
+}
 
-    const reqController = new AbortController();
-    const reqTimeout = setTimeout(() => reqController.abort(), TIMEOUT_MS);
+// Follow a crawl until it finishes: render the start page as soon as it is
+// scanned, then each linked page as it completes.
+// opts.resumed is true when picking up a crawl after a page reload.
+async function followCrawl(crawlId, opts = {}) {
+  const seq = ++crawlFollowSeq;
+  const active = () => seq === crawlFollowSeq;
+  let main = null;
+  let cards = null;
+  let failures = 0;
 
+  while (active()) {
+    let job;
     try {
-      await ensureToken();
-      const res = await fetch(`${apiBase()}/api/v1/scan`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${state.token}`,
-        },
-        body: JSON.stringify({ url: entry.url, wcag_level: wcagLevel, depth: 0 }),
-        signal: reqController.signal,
-      });
-
-      clearTimeout(reqTimeout);
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Scan failed');
-      entry.done = true;
-      renderLinkedPageCard(entry.card, data);
-      if (state.scanResult) {
-        if (!state.scanResult.embedded_results) state.scanResult.embedded_results = [];
-        state.scanResult.embedded_results.push(data);
+      const res = await fetch(`${apiBase()}/api/v1/crawl/${encodeURIComponent(crawlId)}`);
+      if (res.status === 404) {
+        // The job is gone (expired, or the server restarted).
+        if (!active()) return;
+        forgetCrawl();
+        if (main) {
+          setDownloadButtonsDisabled(false);
+          revealScreenshotSection(main);
+          showError('The multi-page scan was interrupted. Results so far are shown; run the scan again for the remaining pages.');
+        } else {
+          if (!opts.resumed) showError('Scan error: the scan is no longer available. Please run it again.');
+          setView('hero');
+        }
+        return;
       }
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      job = await res.json();
+      failures = 0;
     } catch (err) {
-      clearTimeout(reqTimeout);
-      entry.done = true;
-      if (reqController.signal.aborted) {
-        renderLinkedPageTimeout(entry.card, entry.url);
-      } else {
-        renderLinkedPageError(entry.card, entry.url, err.message);
+      // Tolerate brief network trouble; give up after about 30 seconds of it.
+      if (++failures > 20) {
+        if (!active()) return;
+        showError(`Scan error: lost contact with the server (${err.message}). Reload the page to resume.`);
+        if (!main) setView('hero');
+        setDownloadButtonsDisabled(false);
+        return;
       }
+      await new Promise(r => setTimeout(r, CRAWL_POLL_MS));
+      continue;
     }
-  };
+    if (!active()) return;
 
-  if (mode === 'parallel') {
-    let maxConcurrent = 5;
-    try {
-      const infoRes = await fetch(`${apiBase()}/api/v1/`);
-      if (infoRes.ok) {
-        const info = await infoRes.json();
-        if (info.max_concurrent_scans) maxConcurrent = info.max_concurrent_scans;
+    if (!main) {
+      if ($('loading-url') && job.url) $('loading-url').textContent = job.url;
+      if (job.status === 'error' || (job.status === 'cancelled' && !job.main_scan_id)) {
+        forgetCrawl();
+        if (!opts.resumed || job.status === 'error') showError(`Scan error: ${job.error || 'Scan failed'}`);
+        setView('hero');
+        return;
       }
-    } catch (e) {
-      console.warn('Failed to fetch max_concurrent_scans', e);
+      if (job.main_scan_id) {
+        try {
+          main = await fetchStoredResult(job.main_scan_id);
+        } catch (err) {
+          if (!active()) return;
+          forgetCrawl();
+          showError(`Scan error: ${err.message}`);
+          setView('hero');
+          return;
+        }
+        if (!active()) return;
+        main.embedded_results = [];
+        main.crawl_id = crawlId;
+        state.scanResult = main;
+        renderResults(main);
+        setView('results');
+        setDownloadButtonsDisabled(true);
+      }
     }
 
-    let i = 0;
-    const workers = Array(maxConcurrent).fill(0).map(async () => {
-      while (i < cardStates.length) {
-        const entry = cardStates[i++];
-        await scanOne(entry);
+    if (main) {
+      const pages = job.pages || [];
+      if (!cards && pages.length > 0) cards = buildLinkedPageCards(pages);
+      for (let i = 0; cards && i < cards.length && i < pages.length; i++) {
+        const entry = cards[i];
+        const page = pages[i];
+        if (entry.handled) continue;
+        if (page.status === 'scanning') {
+          const statusEl = entry.card.querySelector('.linked-page-stat');
+          if (statusEl) statusEl.textContent = 'Scanning…';
+        } else if (page.status === 'done') {
+          entry.handled = true;
+          try {
+            const sub = await fetchStoredResult(page.scan_id);
+            if (!active()) return;
+            renderLinkedPageCard(entry.card, sub);
+            main.embedded_results.push(sub);
+          } catch (err) {
+            renderLinkedPageError(entry.card, entry.url, err.message);
+          }
+        } else if (page.status === 'timeout') {
+          entry.handled = true;
+          renderLinkedPageTimeout(entry.card, entry.url);
+        } else if (page.status === 'error') {
+          entry.handled = true;
+          renderLinkedPageError(entry.card, entry.url, page.error || 'Scan failed');
+        }
       }
-    });
-    await Promise.allSettled(workers);
-  } else {
-    for (const entry of cardStates) {
-      await scanOne(entry);
+
+      const finished = job.status === 'done' || job.status === 'cancelled' || job.status === 'error';
+      if (finished && (!cards || cards.every(c => c.handled))) {
+        forgetCrawl();
+        setDownloadButtonsDisabled(false);
+        // Reveal Impacted Components only after all child scans have finished
+        revealScreenshotSection(main);
+        // The compliance report requested with the scan covers every scanned page.
+        if (opts.shouldGenerateReport && opts.reportMeta) {
+          generateComplianceReportDirect(opts.reportStandard, opts.reportFormat, opts.reportMeta, main);
+        }
+        return;
+      }
     }
+
+    // Poll faster until the start page is in, so first results appear promptly.
+    await new Promise(r => setTimeout(r, main ? CRAWL_POLL_MS : 600));
   }
+}
 
-  cardStates.filter(e => !e.done).forEach(e => renderLinkedPageTimeout(e.card, e.url));
+// On page load, pick up a multi-page scan that was still running when the
+// page was closed or reloaded.
+function resumeCrawlIfAny() {
+  let id = null;
+  try { id = localStorage.getItem(LS_KEY_CRAWL); } catch (_) {}
+  if (!id) return false;
+  setView('loading');
+  const depthMsg = $('loading-depth-msg');
+  if (depthMsg) depthMsg.textContent = 'Resuming your multi-page scan…';
+  followCrawl(id, { resumed: true });
+  return true;
 }
 
 function renderLinkedPageCard(card, sub) {
@@ -1657,6 +1790,8 @@ async function generateComplianceReportDirect(standard, format, meta, scanData) 
       // Lets the server build the report from the scan already shown,
       // instead of scanning the page a second time.
       scan_id: scanData.scan_id || scanData.report_id || undefined,
+      // For a multi-page scan the report covers every page that was scanned.
+      crawl_id: scanData.crawl_id || undefined,
       format: format || 'html',
       meta: meta || {},
     };
@@ -2141,7 +2276,7 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   // ── New Scan button ──────────────────────────────
-  $('new-scan-btn')?.addEventListener('click', () => { setView('hero'); urlInput?.focus(); });
+  $('new-scan-btn')?.addEventListener('click', () => { stopFollowingCrawl(); setView('hero'); urlInput?.focus(); });
   $('download-report-btn')?.addEventListener('click', downloadUserReport);
   $('download-md-btn')?.addEventListener('click', downloadAIIssueBrief);
   $('download-xlsx-btn')?.addEventListener('click', downloadExcelReport);
@@ -2235,6 +2370,11 @@ document.addEventListener('DOMContentLoaded', () => {
         setView('hero');
       }
     })();
+  }
+
+  // Resume a multi-page scan that was still running when the page was last closed.
+  if (!reportId && !autoUrl && window.location.hash !== '#coverage') {
+    resumeCrawlIfAny();
   }
 });
 

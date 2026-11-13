@@ -59,4 +59,6 @@ type ComplianceReport struct {
 	EvaluatedSCs            int    `json:"evaluated_scs"`              // rows with hasRule && TestedElements>0
 	AudioEyeWarning         string `json:"audioeye_warning,omitempty"` // set when AE scored on 0/partial SCs
 	ScanWCAGLevel           string `json:"scan_wcag_level"`            // actual level the scan ran at
+	// PagesScanned lists every page a multi-page report covers; empty for a single-page report.
+	PagesScanned []string `json:"pages_scanned,omitempty"`
 }

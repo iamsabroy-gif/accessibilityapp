@@ -45,6 +45,9 @@ type Handler struct {
 	// "View Detailed Report" links. Created on first use if nil.
 	Results     *ResultStore
 	resultsOnce sync.Once
+
+	// crawls tracks server-side multi-page scans (see crawl.go).
+	crawls crawlStore
 }
 
 // results returns the result store, creating an in-memory one if none was configured.
@@ -534,10 +537,13 @@ type ReportRequest struct {
 	URL string `json:"url"`
 	// ScanID refers to a result returned by an earlier scan. When it is set and
 	// still stored, the report is built from that result instead of re-scanning.
-	ScanID string            `json:"scan_id"`
-	Format string            `json:"format"`
-	Depth  int               `json:"depth"`
-	Meta   models.ReportMeta `json:"meta"`
+	ScanID string `json:"scan_id"`
+	// CrawlID refers to a multi-page scan. When set and still known, the report
+	// covers every page of that crawl instead of a single page.
+	CrawlID string            `json:"crawl_id"`
+	Format  string            `json:"format"`
+	Depth   int               `json:"depth"`
+	Meta    models.ReportMeta `json:"meta"`
 }
 
 func (h *Handler) processReportRequest(w http.ResponseWriter, r *http.Request) (*ReportRequest, *models.ScanResult, error) {
@@ -548,6 +554,14 @@ func (h *Handler) processReportRequest(w http.ResponseWriter, r *http.Request) (
 	}
 	if req.Format != "pdf" {
 		req.Format = "html" // default
+	}
+
+	// A crawl produces one report covering all of its pages.
+	if req.CrawlID != "" {
+		if result, ok := h.crawlResult(req.CrawlID); ok {
+			result.Summary.Level = "WCAG 2.1 " + config.GetWCAGLevel()
+			return &req, result, nil
+		}
 	}
 
 	// Reuse the stored scan when the client refers to one.
@@ -654,6 +668,7 @@ func (h *Handler) Report(name string) http.HandlerFunc {
 			writeError(w, http.StatusInternalServerError, "failed to build compliance report", err.Error())
 			return
 		}
+		compReport.PagesScanned = result.PagesScanned
 		html, pdf, err := spec.generate(result, compReport, req)
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, "failed to generate "+spec.label+" report", err.Error())

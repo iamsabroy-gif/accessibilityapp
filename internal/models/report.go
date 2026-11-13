@@ -103,6 +103,7 @@ type ScanResult struct {
 	IncompleteGuidelines []string        `json:"incomplete_guidelines,omitempty"`
 	EmbeddedResults      []ScanResult    `json:"embedded_results,omitempty"`
 	DiscoveredLinks      []string        `json:"discovered_links,omitempty"`
+	PagesScanned         []string        `json:"pages_scanned,omitempty"` // set on a combined multi-page result
 	PageHTML             string          `json:"page_html,omitempty"`
 	VisualReportPath     string          `json:"visual_report_path,omitempty"`
 	VisualReportHTML     string          `json:"visual_report_html,omitempty"` // full HTML report, returned when visual_report=true
