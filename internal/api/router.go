@@ -76,15 +76,21 @@ func NewRouter(h *Handler, logger *zap.Logger) *chi.Mux {
 		http.ServeFile(w, req, filepath.Join(frontendDir, "index.html"))
 	})
 
+	// Static files and the app/admin pages may be cached, but the browser must
+	// revalidate on every use: unchanged files then cost a 304 instead of a full
+	// download, and a new deploy is still picked up immediately.
+	// (The root page above stays uncached because its content depends on a setting.)
+	const revalidate = "no-cache"
+
 	// Scan tool now lives explicitly at /app
 	r.Get("/app", func(w http.ResponseWriter, req *http.Request) {
-		w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
+		w.Header().Set("Cache-Control", revalidate)
 		http.ServeFile(w, req, filepath.Join(frontendDir, "index.html"))
 	})
 
 	// Admin console lives at /admin
 	r.Get("/admin", func(w http.ResponseWriter, req *http.Request) {
-		w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
+		w.Header().Set("Cache-Control", revalidate)
 		http.ServeFile(w, req, filepath.Join(frontendDir, "admin.html"))
 	})
 
@@ -92,7 +98,7 @@ func NewRouter(h *Handler, logger *zap.Logger) *chi.Mux {
 		// If the file exists on disk, serve it directly.
 		// Otherwise serve index.html so client-side routing works.
 		path := filepath.Join(frontendDir, filepath.Clean("/"+req.URL.Path))
-		w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
+		w.Header().Set("Cache-Control", revalidate)
 		if info, err := os.Stat(path); err == nil && !info.IsDir() {
 			fs.ServeHTTP(w, req)
 			return

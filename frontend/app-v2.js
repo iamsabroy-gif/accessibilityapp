@@ -1762,12 +1762,41 @@ function closeComplianceModal() {
 }
 
 
-function downloadExcelReport() {
+// The spreadsheet library (~1 MB) is only needed for the Excel download, so it
+// is fetched on first use instead of blocking every page load.
+const XLSX_SRC = 'https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js';
+let xlsxLoading = null;
+function loadXLSX() {
+  if (typeof XLSX !== 'undefined') return Promise.resolve();
+  if (!xlsxLoading) {
+    xlsxLoading = new Promise((resolve, reject) => {
+      const script = document.createElement('script');
+      script.src = XLSX_SRC;
+      script.onload = () => resolve();
+      script.onerror = () => { xlsxLoading = null; script.remove(); reject(new Error('load failed')); };
+      document.head.appendChild(script);
+    });
+  }
+  return xlsxLoading;
+}
+
+async function downloadExcelReport() {
   if (state.isScanningDiscoveredLinks) {
     showError('Please wait for the scan to complete before downloading the report.');
     return;
   }
-  if (!state.scanResult || typeof XLSX === 'undefined') return;
+  if (!state.scanResult) return;
+  if (typeof XLSX === 'undefined') {
+    const toast = showToast('Preparing Excel report…', 'info', true);
+    try {
+      await loadXLSX();
+    } catch (_) {
+      toast?.hide();
+      showError('Could not load the Excel export library. Check your connection and try again.');
+      return;
+    }
+    toast?.hide();
+  }
   const result = state.scanResult;
   const wb = XLSX.utils.book_new();
 

@@ -108,6 +108,26 @@ func (w *nodeWorker) readLoop(cmd *exec.Cmd, stdout io.Reader) {
 
 // Scan runs one scan on the worker and returns the raw JSON result.
 func (w *nodeWorker) Scan(ctx context.Context, url string) ([]byte, error) {
+	return w.request(ctx, map[string]string{"url": url})
+}
+
+// RenderPDF renders an HTML document to PDF on the worker's browser.
+func (w *nodeWorker) RenderPDF(ctx context.Context, html string) ([]byte, error) {
+	raw, err := w.request(ctx, map[string]string{"pdfHtml": html})
+	if err != nil {
+		return nil, err
+	}
+	var out struct {
+		PDF []byte `json:"pdf"` // base64 in JSON
+	}
+	if err := json.Unmarshal(raw, &out); err != nil || len(out.PDF) == 0 {
+		return nil, fmt.Errorf("worker returned no PDF")
+	}
+	return out.PDF, nil
+}
+
+// request sends one job to the worker and waits for its result.
+func (w *nodeWorker) request(ctx context.Context, job map[string]string) ([]byte, error) {
 	w.mu.Lock()
 	if err := w.startLocked(); err != nil {
 		w.mu.Unlock()
@@ -117,7 +137,8 @@ func (w *nodeWorker) Scan(ctx context.Context, url string) ([]byte, error) {
 	id := strconv.FormatUint(w.nextID, 10)
 	ch := make(chan workerResponse, 1)
 	w.pending[id] = ch
-	req, _ := json.Marshal(map[string]string{"id": id, "url": url})
+	job["id"] = id
+	req, _ := json.Marshal(job)
 	_, err := w.stdin.Write(append(req, '\n'))
 	if err != nil {
 		delete(w.pending, id)

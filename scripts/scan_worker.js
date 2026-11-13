@@ -8,8 +8,10 @@
  *
  * Protocol: one JSON object per line.
  *   stdin:   {"id":"1","url":"https://example.com"}   start a scan
+ *            {"id":"2","pdfHtml":"<html>..."}          render HTML to PDF
  *            {"id":"1","cancel":true}                 abort a running scan
  *   stdout:  {"id":"1","result":{...}}                scan finished
+ *            {"id":"2","result":{"pdf":"<base64>"}}    PDF rendered
  *            {"id":"1","error":"..."}                 scan failed
  *
  * The process exits when stdin closes (i.e. when the server stops).
@@ -56,7 +58,19 @@ async function recycleIfDue() {
 
 const pending = new Set(); // ids accepted and not yet finished
 
-async function handleScan(id, url) {
+// Render an HTML document to an A4 PDF (same settings as pdf_generator.js).
+async function renderPdf(page, html) {
+  await page.setContent(html, { waitUntil: 'networkidle0' });
+  const buf = await page.pdf({
+    format: 'A4',
+    margin: { top: '20mm', right: '20mm', bottom: '20mm', left: '20mm' },
+    printBackground: true,
+  });
+  return { pdf: Buffer.from(buf).toString('base64') };
+}
+
+// Run one job (a scan or a PDF render) in its own browser context.
+async function handleJob(id, job) {
   active++;
   pending.add(id);
   let context;
@@ -67,7 +81,9 @@ async function handleScan(id, url) {
     if (cancelled.has(id)) throw new Error('scan cancelled');
     running.set(id, context);
     const page = await context.newPage();
-    const result = await scanPage(page, url);
+    const result = job.pdfHtml !== undefined
+      ? await renderPdf(page, job.pdfHtml)
+      : await scanPage(page, job.url);
     send({ id, result });
   } catch (err) {
     send({ id, error: (err && err.message) || String(err) });
@@ -100,11 +116,15 @@ rl.on('line', (line) => {
     else if (pending.has(msg.id)) cancelled.add(msg.id);
     return;
   }
+  if (typeof msg.pdfHtml === 'string') {
+    handleJob(msg.id, { pdfHtml: msg.pdfHtml });
+    return;
+  }
   if (!msg.url) {
     send({ id: msg.id, error: 'URL argument is required' });
     return;
   }
-  handleScan(msg.id, msg.url);
+  handleJob(msg.id, { url: msg.url });
 });
 
 async function shutdown() {

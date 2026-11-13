@@ -97,6 +97,16 @@ func (a *AxeRunner) Close() {
 	}
 }
 
+// RenderPDF converts HTML to PDF on the persistent worker's browser.
+// It returns an error if no worker is available; callers then fall back to
+// the one-shot PDF script.
+func (a *AxeRunner) RenderPDF(ctx context.Context, html string) ([]byte, error) {
+	if a.worker == nil {
+		return nil, errWorkerUnavailable
+	}
+	return a.worker.RenderPDF(ctx, html)
+}
+
 // runOnce executes a runner script in its own process and returns its stdout.
 func (a *AxeRunner) runOnce(ctx context.Context, scriptPath, url, wcagLevel string) ([]byte, error) {
 	cmd := exec.CommandContext(ctx, a.nodeBin, scriptPath, url, wcagLevel)

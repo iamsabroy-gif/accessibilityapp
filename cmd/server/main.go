@@ -15,6 +15,7 @@ import (
 	"github.com/webaccessibility/server/internal/config"
 	"github.com/webaccessibility/server/internal/coverage"
 	"github.com/webaccessibility/server/internal/leads"
+	"github.com/webaccessibility/server/internal/report"
 	"github.com/webaccessibility/server/internal/scanner"
 	"github.com/webaccessibility/server/internal/visits"
 	"go.uber.org/zap"
@@ -37,6 +38,7 @@ func main() {
 	// Scanner
 	axeRunner := scanner.NewAxeRunner(cfg.NodeBin, cfg.AxeRunnerScript, cfg.NativeRunnerScript)
 	defer axeRunner.Close()
+	report.PDFRenderer = axeRunner.RenderPDF
 	coveragePath := os.Getenv("WCAG_COVERAGE_REPORT")
 	if coveragePath == "" {
 		coveragePath = "wcag_coverage_report.xlsx"
