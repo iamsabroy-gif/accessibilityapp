@@ -70,36 +70,46 @@ function resolveChromiumPath() {
 }
 
 /**
+ * Launch a headless browser. Pass the result as opts.browser to scan() to
+ * reuse one browser across several URLs.
+ */
+function launchBrowser() {
+  return puppeteer.launch({
+    executablePath: resolveChromiumPath(),
+    headless: 'new',
+    args: [
+      '--no-sandbox',
+      '--disable-setuid-sandbox',
+      '--disable-dev-shm-usage',
+      '--disable-gpu',
+      '--disable-software-rasterizer',
+      '--js-flags=--max-old-space-size=256',
+    ],
+    ignoreHTTPSErrors: true,
+    acceptInsecureCerts: true,
+  });
+}
+
+/**
  * Run an accessibility scan against a URL.
  *
  * @param {string} url - The URL to scan.
  * @param {Object} opts - Options.
  * @param {string} [opts.wcagLevel='AA'] - WCAG conformance level filter (A, AA, AAA).
  * @param {number} [opts.timeout=180] - Page navigation timeout in seconds.
+ * @param {Object} [opts.browser] - An already-launched browser to reuse. It is left open.
  * @returns {Promise<{url: string, violations: Array, passes: Array, incomplete: Array, error?: string}>}
  */
 async function scan(url, opts = {}) {
   const { wcagLevel = 'AA', timeout = 180 } = opts;
-  let browser;
+  const ownBrowser = !opts.browser;
+  let browser = opts.browser;
+  let page;
 
   try {
-    const execPath = resolveChromiumPath();
+    if (ownBrowser) browser = await launchBrowser();
 
-    browser = await puppeteer.launch({
-      executablePath: execPath,
-      headless: 'new',
-      args: [
-        '--no-sandbox',
-        '--disable-setuid-sandbox',
-        '--disable-dev-shm-usage',
-        '--disable-gpu',
-        '--disable-software-rasterizer',
-        '--js-flags=--max-old-space-size=256',
-      ],
-      ignoreHTTPSErrors: true,
-    });
-
-    const page = await browser.newPage();
+    page = await browser.newPage();
     await page.setViewport({ width: 1280, height: 800 });
     await page.setUserAgent(
       'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 ' +
@@ -212,10 +222,12 @@ async function scan(url, opts = {}) {
       error: err.message || String(err),
     };
   } finally {
-    if (browser) {
-      await browser.close();
+    if (ownBrowser) {
+      if (browser) await browser.close().catch(() => {});
+    } else if (page) {
+      await page.close().catch(() => {});
     }
   }
 }
 
-module.exports = { scan, loadWcagMap, filterByWcagLevel };
+module.exports = { scan, launchBrowser, loadWcagMap, filterByWcagLevel };

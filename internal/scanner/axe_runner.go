@@ -1,17 +1,20 @@
 package scanner
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"time"
 
 	"github.com/webaccessibility/server/internal/config"
 	"github.com/webaccessibility/server/internal/models"
 	"github.com/webaccessibility/server/internal/scoring"
 
-	neturl "net/url"
 	"sort"
 	"strings"
 )
@@ -58,48 +61,90 @@ type AxeRule struct {
 	NodeCount   int    `json:"nodeCount"`
 }
 
-// AxeRunner implements Scanner using axe-core via a Node.js subprocess.
+// AxeRunner implements Scanner using a Node.js subprocess.
+//
+// With the native engine, scans run on a persistent worker process that keeps
+// one browser open (see scripts/scan_worker.js). If the worker cannot be used,
+// or the axe engine is active, each scan runs in its own process instead.
+// Set SCAN_WORKER=off to always use one process per scan.
 type AxeRunner struct {
 	nodeBin          string
 	axeScriptPath    string
 	nativeScriptPath string
+	worker           *nodeWorker
 }
 
 // NewAxeRunner creates a new AxeRunner with the given node binary and script paths.
 func NewAxeRunner(nodeBin, axeScriptPath, nativeScriptPath string) *AxeRunner {
-	return &AxeRunner{
+	a := &AxeRunner{
 		nodeBin:          nodeBin,
 		axeScriptPath:    axeScriptPath,
 		nativeScriptPath: nativeScriptPath,
 	}
+	if strings.ToLower(os.Getenv("SCAN_WORKER")) != "off" {
+		workerScript := filepath.Join(filepath.Dir(nativeScriptPath), "scan_worker.js")
+		if _, err := os.Stat(workerScript); err == nil {
+			a.worker = newNodeWorker(nodeBin, workerScript)
+		}
+	}
+	return a
 }
 
-// Scan runs axe-core against the given URL and returns a structured ScanResult.
-func (a *AxeRunner) Scan(ctx context.Context, url string, wcagLevel string, depth int) (*models.ScanResult, error) {
-	start := time.Now()
-
-	// Determine which script to run based on active engine config
-	scriptPath := a.axeScriptPath
-	if config.GetActiveEngine() == "native" {
-		scriptPath = a.nativeScriptPath
+// Close stops the persistent scan worker, if one is running.
+func (a *AxeRunner) Close() {
+	if a.worker != nil {
+		a.worker.Close()
 	}
+}
 
-	// Execute the node script with depth argument (passed for future use)
+// runOnce executes a runner script in its own process and returns its stdout.
+func (a *AxeRunner) runOnce(ctx context.Context, scriptPath, url, wcagLevel string) ([]byte, error) {
 	cmd := exec.CommandContext(ctx, a.nodeBin, scriptPath, url, wcagLevel)
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		// Try to parse JSON error from stdout (which may contain {"error":...})
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		// The script reports failures as {"error":...} on stdout.
 		var rawErr struct {
 			Error string `json:"error"`
 		}
-		if jsonErr := json.Unmarshal(output, &rawErr); jsonErr == nil && rawErr.Error != "" {
+		if jsonErr := json.Unmarshal(stdout.Bytes(), &rawErr); jsonErr == nil && rawErr.Error != "" {
 			return nil, fmt.Errorf("axe runner error: %s", rawErr.Error)
 		}
 		if ctx.Err() == context.DeadlineExceeded {
 			return nil, fmt.Errorf("scan timed out for URL: %s", url)
 		}
-		// Fallback to whatever output we have (may include stderr/stdout)
-		return nil, fmt.Errorf("axe runner failed: %s", string(output))
+		return nil, fmt.Errorf("axe runner failed: %s%s", stdout.String(), stderr.String())
+	}
+	return stdout.Bytes(), nil
+}
+
+// Scan runs the active engine against the given URL and returns a structured ScanResult.
+func (a *AxeRunner) Scan(ctx context.Context, url string, wcagLevel string, depth int) (*models.ScanResult, error) {
+	start := time.Now()
+
+	var output []byte
+	var err error
+	if config.GetActiveEngine() == "native" {
+		usedWorker := false
+		if a.worker != nil {
+			output, err = a.worker.Scan(ctx, url)
+			usedWorker = !errors.Is(err, errWorkerUnavailable)
+			if usedWorker && err != nil {
+				if ctx.Err() == context.DeadlineExceeded {
+					return nil, fmt.Errorf("scan timed out for URL: %s", url)
+				}
+				return nil, fmt.Errorf("axe runner error: %s", err.Error())
+			}
+		}
+		if !usedWorker {
+			output, err = a.runOnce(ctx, a.nativeScriptPath, url, wcagLevel)
+		}
+	} else {
+		output, err = a.runOnce(ctx, a.axeScriptPath, url, wcagLevel)
+	}
+	if err != nil {
+		return nil, err
 	}
 
 	var raw AxeRawResult
@@ -113,37 +158,14 @@ func (a *AxeRunner) Scan(ctx context.Context, url string, wcagLevel string, dept
 	// Map base result
 	result := MapToScanResult(raw, url, wcagLevel, time.Since(start).Milliseconds())
 
-	// If depth == 1, return discovered links for frontend-driven parallel scanning
+	// If depth == 1, return discovered links for frontend-driven scanning.
+	// Only same-site pages are returned, so they share the host that was
+	// already validated for this scan.
 	if depth == 1 && len(raw.Links) > 0 {
-		maxLinks := 10
-		validLinks := make([]string, 0, maxLinks)
-		for _, link := range raw.Links {
-			if len(validLinks) >= maxLinks {
-				break
-			}
-			u, err := neturl.Parse(link)
-			if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
-				continue
-			}
-			lower := strings.ToLower(link)
-			blocked := []string{"localhost", "127.", "10.", "192.168.", "172.16.", "0.0.0.0", "::1"}
-			blockedFlag := false
-			for _, b := range blocked {
-				if strings.Contains(lower, b) {
-					blockedFlag = true
-					break
-				}
-			}
-			if blockedFlag && !config.GetAllowPrivateScans() {
-				continue
-			}
-			validLinks = append(validLinks, link)
-		}
-		result.DiscoveredLinks = validLinks
+		result.DiscoveredLinks = SelectLinks(url, raw.Links, 10)
 	}
 
 	return result, nil
-
 }
 
 // MapToScanResult converts raw axe or native engine output into our canonical ScanResult model.

@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/go-chi/chi/v5/middleware"
 	"github.com/webaccessibility/server/internal/config"
 	"go.uber.org/zap"
 )
@@ -17,6 +18,7 @@ func NewRouter(h *Handler, logger *zap.Logger) *chi.Mux {
 
 	// Global middleware
 	r.Use(corsMiddleware)
+	r.Use(middleware.Compress(5))
 	r.Use(loggingMiddleware(logger))
 
 	// API v1 routes
@@ -43,17 +45,9 @@ func NewRouter(h *Handler, logger *zap.Logger) *chi.Mux {
 			r.Post("/scan", jwtAuthMiddleware(h.Scan))
 			r.Post("/scan/client", jwtAuthMiddleware(h.ScanClient))
 			r.Post("/score", jwtAuthMiddleware(h.ScoreOnly))
-			r.Post("/report/ada", jwtAuthMiddleware(h.ReportADA))
-			r.Post("/report/vpat", jwtAuthMiddleware(h.ReportVPAT))
-			r.Post("/report/en301549", jwtAuthMiddleware(h.ReportEN301549))
-			r.Post("/report/uk", jwtAuthMiddleware(h.ReportUK))
-			r.Post("/report/aoda", jwtAuthMiddleware(h.ReportAODA))
-			r.Post("/report/aca", jwtAuthMiddleware(h.ReportACA))
-			r.Post("/report/dda", jwtAuthMiddleware(h.ReportDDA))
-			r.Post("/report/gigw", jwtAuthMiddleware(h.ReportGIGW))
-			r.Post("/report/cvaa", jwtAuthMiddleware(h.ReportCVAA))
-			r.Post("/report/eaa", jwtAuthMiddleware(h.ReportEAA))
-			r.Post("/report/bitv", jwtAuthMiddleware(h.ReportBITV))
+			for name := range reportSpecs {
+				r.Post("/report/"+name, jwtAuthMiddleware(h.Report(name)))
+			}
 		})
 	})
 

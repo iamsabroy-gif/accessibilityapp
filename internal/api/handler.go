@@ -2,9 +2,7 @@ package api
 
 import (
 	"context"
-	"crypto/rand"
 	"crypto/subtle"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -31,12 +29,6 @@ import (
 	"sync/atomic"
 )
 
-// reportCacheEntry holds a cached scan result with expiry.
-type reportCacheEntry struct {
-	Result    *models.ScanResult
-	ExpiresAt time.Time
-}
-
 // Handler holds shared dependencies for all route handlers.
 type Handler struct {
 	Scanner      scanner.Scanner
@@ -49,9 +41,20 @@ type Handler struct {
 	VisitStore   *visits.Store
 	activeScans  int32
 
-	// In-memory report cache for extension "View Detailed Report" links.
-	reportCacheMu sync.Mutex
-	reportCache   map[string]reportCacheEntry
+	// Results holds recent scan results for reports and the extension's
+	// "View Detailed Report" links. Created on first use if nil.
+	Results     *ResultStore
+	resultsOnce sync.Once
+}
+
+// results returns the result store, creating an in-memory one if none was configured.
+func (h *Handler) results() *ResultStore {
+	h.resultsOnce.Do(func() {
+		if h.Results == nil {
+			h.Results = NewResultStore("")
+		}
+	})
+	return h.Results
 }
 
 // Health handles GET /api/v1/health
@@ -108,6 +111,8 @@ func (h *Handler) Scan(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "scan failed", err.Error())
 		return
 	}
+	// Keep the result so reports can be generated from it without re-scanning.
+	result.ScanID = h.results().Save(result)
 	// Generate visual HTML report if requested
 	if req.VisualReport {
 		html, rerr := report.Generate(result)
@@ -167,7 +172,8 @@ func (h *Handler) ScanClient(w http.ResponseWriter, r *http.Request) {
 	result := scanner.MapToScanResult(raw, raw.URL, "AAA", durationMs)
 
 	// Store in report cache so the extension can open a detailed report in the web app
-	reportID := h.storeReport(result)
+	reportID := h.results().Save(result)
+	result.ScanID = reportID
 	h.Logger.Info("stored extension report", zap.String("report_id", reportID), zap.String("url", raw.URL))
 
 	// Wrap in envelope that includes report_id for the extension
@@ -181,68 +187,20 @@ func (h *Handler) ScanClient(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, envelope)
 }
 
-// storeReport saves a ScanResult in the in-memory cache and returns a unique ID.
-// Entries expire after 30 minutes. Cache is capped at 200 entries (oldest evicted first).
-func (h *Handler) storeReport(result *models.ScanResult) string {
-	b := make([]byte, 12)
-	_, _ = rand.Read(b)
-	id := hex.EncodeToString(b)
-
-	h.reportCacheMu.Lock()
-	defer h.reportCacheMu.Unlock()
-
-	if h.reportCache == nil {
-		h.reportCache = make(map[string]reportCacheEntry)
-	}
-
-	// Evict expired entries
-	now := time.Now()
-	for k, v := range h.reportCache {
-		if now.After(v.ExpiresAt) {
-			delete(h.reportCache, k)
-		}
-	}
-
-	// Cap at 200 — evict oldest if needed
-	if len(h.reportCache) >= 200 {
-		var oldestKey string
-		var oldestTime time.Time
-		for k, v := range h.reportCache {
-			if oldestKey == "" || v.ExpiresAt.Before(oldestTime) {
-				oldestKey = k
-				oldestTime = v.ExpiresAt
-			}
-		}
-		delete(h.reportCache, oldestKey)
-	}
-
-	h.reportCache[id] = reportCacheEntry{
-		Result:    result,
-		ExpiresAt: now.Add(30 * time.Minute),
-	}
-	return id
-}
-
-// GetReport handles GET /api/v1/report/{id} — returns a cached scan result by ID.
+// GetReport handles GET /api/v1/report/{id} — returns a stored scan result by ID.
 func (h *Handler) GetReport(w http.ResponseWriter, r *http.Request) {
-	// Extract report ID from the URL path: /api/v1/report/{id}
-	path := strings.TrimPrefix(r.URL.Path, "/api/v1/report/")
-	id := strings.TrimSpace(path)
+	id := strings.TrimSpace(strings.TrimPrefix(r.URL.Path, "/api/v1/report/"))
 	if id == "" {
 		writeError(w, http.StatusBadRequest, "report id is required", "")
 		return
 	}
-
-	h.reportCacheMu.Lock()
-	entry, ok := h.reportCache[id]
-	h.reportCacheMu.Unlock()
-
-	if !ok || time.Now().After(entry.ExpiresAt) {
+	result, ok := h.results().Get(id)
+	if !ok {
 		writeError(w, http.StatusNotFound, "report not found or expired", "")
 		return
 	}
-
-	writeJSON(w, http.StatusOK, entry.Result)
+	result.ScanID = id
+	writeJSON(w, http.StatusOK, result)
 }
 
 // GenerateToken handles POST /api/v1/token to issue a JWT.
@@ -527,6 +485,11 @@ func (h *Handler) ScoreOnly(w http.ResponseWriter, r *http.Request) {
 	const wcagLevel = "AAA"
 	ctx, cancel := context.WithTimeout(r.Context(), h.ScanTimeout)
 	defer cancel()
+	if err := h.acquireSlot(ctx); err != nil {
+		writeError(w, http.StatusTooManyRequests, "scan aborted or timed out while waiting for slot", err.Error())
+		return
+	}
+	defer h.releaseSlot()
 	h.Logger.Info("starting score-only scan", zap.String("url", req.URL), zap.String("wcag", wcagLevel))
 	result, err := h.Scanner.Scan(ctx, req.URL, wcagLevel, req.Depth)
 	if err != nil {
@@ -552,15 +515,9 @@ func validateURL(raw string) error {
 	return nil
 }
 
+// isPrivateURL reports whether the URL targets a loopback/private/internal address.
 func isPrivateURL(raw string) bool {
-	lower := strings.ToLower(raw)
-	blocked := []string{"localhost", "127.", "10.", "192.168.", "172.16.", "0.0.0.0", "::1"}
-	for _, b := range blocked {
-		if strings.Contains(lower, b) {
-			return true
-		}
-	}
-	return false
+	return scanner.IsPrivateURL(raw)
 }
 
 func writeJSON(w http.ResponseWriter, status int, v interface{}) {
@@ -574,7 +531,10 @@ func writeError(w http.ResponseWriter, status int, msg, details string) {
 }
 
 type ReportRequest struct {
-	URL    string            `json:"url"`
+	URL string `json:"url"`
+	// ScanID refers to a result returned by an earlier scan. When it is set and
+	// still stored, the report is built from that result instead of re-scanning.
+	ScanID string            `json:"scan_id"`
 	Format string            `json:"format"`
 	Depth  int               `json:"depth"`
 	Meta   models.ReportMeta `json:"meta"`
@@ -586,6 +546,20 @@ func (h *Handler) processReportRequest(w http.ResponseWriter, r *http.Request) (
 		writeError(w, http.StatusBadRequest, "invalid request body", err.Error())
 		return nil, nil, fmt.Errorf("invalid request body")
 	}
+	if req.Format != "pdf" {
+		req.Format = "html" // default
+	}
+
+	// Reuse the stored scan when the client refers to one.
+	if req.ScanID != "" {
+		if stored, ok := h.results().Get(req.ScanID); ok {
+			result := *stored
+			// Reports are labelled with the configured level, as a fresh report scan would be.
+			result.Summary.Level = "WCAG 2.1 " + config.GetWCAGLevel()
+			return &req, &result, nil
+		}
+	}
+
 	if req.URL == "" {
 		writeError(w, http.StatusBadRequest, "url is required", "")
 		return nil, nil, fmt.Errorf("url is required")
@@ -598,12 +572,15 @@ func (h *Handler) processReportRequest(w http.ResponseWriter, r *http.Request) (
 		writeError(w, http.StatusForbidden, "scanning private/internal addresses is not allowed", "")
 		return nil, nil, fmt.Errorf("scanning private/internal addresses is not allowed")
 	}
-	if req.Format != "pdf" {
-		req.Format = "html" // default
-	}
 
 	ctx, cancel := context.WithTimeout(r.Context(), h.ScanTimeout)
 	defer cancel()
+
+	if err := h.acquireSlot(ctx); err != nil {
+		writeError(w, http.StatusTooManyRequests, "scan aborted or timed out while waiting for slot", err.Error())
+		return nil, nil, err
+	}
+	defer h.releaseSlot()
 
 	h.Logger.Info("starting scan for compliance report", zap.String("url", req.URL))
 	result, err := h.Scanner.Scan(ctx, req.URL, config.GetWCAGLevel(), req.Depth)
@@ -616,337 +593,80 @@ func (h *Handler) processReportRequest(w http.ResponseWriter, r *http.Request) (
 	return &req, result, nil
 }
 
-// ReportADA handles POST /api/v1/report/ada
-func (h *Handler) ReportADA(w http.ResponseWriter, r *http.Request) {
-	req, result, err := h.processReportRequest(w, r)
-	if err != nil {
-		return
-	}
-
-	compReport, err := scoring.BuildComplianceReport(result, "ADA", req.Meta)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "failed to build compliance report", err.Error())
-		return
-	}
-
-	opts := report.ADAOptions{
-		Format:           req.Format,
-		Meta:             req.Meta,
-		ComplianceReport: compReport,
-	}
-	ada, err := report.GenerateADA(result, opts)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "failed to generate ADA report", err.Error())
-		return
-	}
-
-	if req.Format == "pdf" {
-		w.Header().Set("Content-Type", "application/pdf")
-		w.Header().Set("Content-Disposition", `attachment; filename="ada_report.pdf"`)
-		w.Write(ada.PDF)
-	} else {
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		w.Write([]byte(ada.HTML))
-	}
+// reportSpec describes one compliance report type served under /api/v1/report/{name}.
+type reportSpec struct {
+	label    string // used in error messages
+	standard string // standard passed to scoring.BuildComplianceReport
+	generate func(result *models.ScanResult, comp *models.ComplianceReport, req *ReportRequest) (html string, pdf []byte, err error)
 }
 
-// ReportVPAT handles POST /api/v1/report/vpat
-func (h *Handler) ReportVPAT(w http.ResponseWriter, r *http.Request) {
-	req, result, err := h.processReportRequest(w, r)
-	if err != nil {
-		return
-	}
-
-	compReport, err := scoring.BuildComplianceReport(result, "508", req.Meta)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "failed to build compliance report", err.Error())
-		return
-	}
-
-	opts := report.VPATOptions{Edition: report.VPATEditionINT, Format: req.Format}
-	html, pdf, err := report.GenerateVPAT(compReport, opts)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "failed to generate VPAT report", err.Error())
-		return
-	}
-
-	if req.Format == "pdf" {
-		w.Header().Set("Content-Type", "application/pdf")
-		w.Header().Set("Content-Disposition", `attachment; filename="vpat_report.pdf"`)
-		w.Write(pdf)
-	} else {
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		w.Write([]byte(html))
-	}
+// reportSpecs maps the route name to its report definition.
+var reportSpecs = map[string]reportSpec{
+	"ada": {"ADA", "ADA", func(result *models.ScanResult, comp *models.ComplianceReport, req *ReportRequest) (string, []byte, error) {
+		ada, err := report.GenerateADA(result, report.ADAOptions{Format: req.Format, Meta: req.Meta, ComplianceReport: comp})
+		if err != nil {
+			return "", nil, err
+		}
+		return ada.HTML, ada.PDF, nil
+	}},
+	"vpat": {"VPAT", "508", func(_ *models.ScanResult, comp *models.ComplianceReport, req *ReportRequest) (string, []byte, error) {
+		return report.GenerateVPAT(comp, report.VPATOptions{Edition: report.VPATEditionINT, Format: req.Format})
+	}},
+	"en301549": {"EN 301 549", "EN301549", func(_ *models.ScanResult, comp *models.ComplianceReport, req *ReportRequest) (string, []byte, error) {
+		return report.GenerateEN301549(comp, report.EN301549Options{Format: req.Format})
+	}},
+	"uk": {"UK", "ADA", func(_ *models.ScanResult, comp *models.ComplianceReport, req *ReportRequest) (string, []byte, error) {
+		return report.GenerateUKEquality(comp, report.UKOptions{Format: req.Format})
+	}},
+	"aoda": {"AODA", "ADA", func(_ *models.ScanResult, comp *models.ComplianceReport, req *ReportRequest) (string, []byte, error) {
+		return report.GenerateAODA(comp, report.AODAOptions{Format: req.Format})
+	}},
+	"aca": {"ACA", "ADA", func(_ *models.ScanResult, comp *models.ComplianceReport, req *ReportRequest) (string, []byte, error) {
+		return report.GenerateACA(comp, report.ACAOptions{Format: req.Format})
+	}},
+	"dda": {"DDA", "ADA", func(_ *models.ScanResult, comp *models.ComplianceReport, req *ReportRequest) (string, []byte, error) {
+		return report.GenerateDDA(comp, report.DDAOptions{Format: req.Format})
+	}},
+	"gigw": {"GIGW", "ADA", func(_ *models.ScanResult, comp *models.ComplianceReport, req *ReportRequest) (string, []byte, error) {
+		return report.GenerateGIGW(comp, report.GIGWOptions{Format: req.Format})
+	}},
+	"cvaa": {"CVAA", "ADA", func(_ *models.ScanResult, comp *models.ComplianceReport, req *ReportRequest) (string, []byte, error) {
+		return report.GenerateCVAA(comp, report.CVAAOptions{Format: req.Format})
+	}},
+	"eaa": {"EAA", "EN301549", func(_ *models.ScanResult, comp *models.ComplianceReport, req *ReportRequest) (string, []byte, error) {
+		return report.GenerateEN301549(comp, report.EN301549Options{Format: req.Format, ReportType: "EAA"})
+	}},
+	"bitv": {"BITV", "EN301549", func(_ *models.ScanResult, comp *models.ComplianceReport, req *ReportRequest) (string, []byte, error) {
+		return report.GenerateEN301549(comp, report.EN301549Options{Format: req.Format, ReportType: "BITV"})
+	}},
 }
 
-// ReportEN301549 handles POST /api/v1/report/en301549
-func (h *Handler) ReportEN301549(w http.ResponseWriter, r *http.Request) {
-	req, result, err := h.processReportRequest(w, r)
-	if err != nil {
-		return
-	}
-
-	compReport, err := scoring.BuildComplianceReport(result, "EN301549", req.Meta)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "failed to build compliance report", err.Error())
-		return
-	}
-
-	opts := report.EN301549Options{Format: req.Format}
-	html, pdf, err := report.GenerateEN301549(compReport, opts)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "failed to generate EN 301 549 report", err.Error())
-		return
-	}
-
-	if req.Format == "pdf" {
-		w.Header().Set("Content-Type", "application/pdf")
-		w.Header().Set("Content-Disposition", `attachment; filename="en301549_report.pdf"`)
-		w.Write(pdf)
-	} else {
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		w.Write([]byte(html))
-	}
-}
-
-// ReportUK handles POST /api/v1/report/uk
-func (h *Handler) ReportUK(w http.ResponseWriter, r *http.Request) {
-	req, result, err := h.processReportRequest(w, r)
-	if err != nil {
-		return
-	}
-
-	compReport, err := scoring.BuildComplianceReport(result, "ADA", req.Meta)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "failed to build compliance report", err.Error())
-		return
-	}
-
-	opts := report.UKOptions{Format: req.Format}
-	html, pdf, err := report.GenerateUKEquality(compReport, opts)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "failed to generate UK report", err.Error())
-		return
-	}
-
-	if req.Format == "pdf" {
-		w.Header().Set("Content-Type", "application/pdf")
-		w.Header().Set("Content-Disposition", `attachment; filename="uk_report.pdf"`)
-		w.Write(pdf)
-	} else {
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		w.Write([]byte(html))
-	}
-}
-
-// ReportAODA handles POST /api/v1/report/aoda
-func (h *Handler) ReportAODA(w http.ResponseWriter, r *http.Request) {
-	req, result, err := h.processReportRequest(w, r)
-	if err != nil {
-		return
-	}
-
-	compReport, err := scoring.BuildComplianceReport(result, "ADA", req.Meta)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "failed to build compliance report", err.Error())
-		return
-	}
-
-	opts := report.AODAOptions{Format: req.Format}
-	html, pdf, err := report.GenerateAODA(compReport, opts)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "failed to generate AODA report", err.Error())
-		return
-	}
-
-	if req.Format == "pdf" {
-		w.Header().Set("Content-Type", "application/pdf")
-		w.Header().Set("Content-Disposition", `attachment; filename="aoda_report.pdf"`)
-		w.Write(pdf)
-	} else {
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		w.Write([]byte(html))
-	}
-}
-
-// ReportACA handles POST /api/v1/report/aca
-func (h *Handler) ReportACA(w http.ResponseWriter, r *http.Request) {
-	req, result, err := h.processReportRequest(w, r)
-	if err != nil {
-		return
-	}
-
-	compReport, err := scoring.BuildComplianceReport(result, "ADA", req.Meta)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "failed to build compliance report", err.Error())
-		return
-	}
-
-	opts := report.ACAOptions{Format: req.Format}
-	html, pdf, err := report.GenerateACA(compReport, opts)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "failed to generate ACA report", err.Error())
-		return
-	}
-
-	if req.Format == "pdf" {
-		w.Header().Set("Content-Type", "application/pdf")
-		w.Header().Set("Content-Disposition", `attachment; filename="aca_report.pdf"`)
-		w.Write(pdf)
-	} else {
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		w.Write([]byte(html))
-	}
-}
-
-// ReportDDA handles POST /api/v1/report/dda
-func (h *Handler) ReportDDA(w http.ResponseWriter, r *http.Request) {
-	req, result, err := h.processReportRequest(w, r)
-	if err != nil {
-		return
-	}
-
-	compReport, err := scoring.BuildComplianceReport(result, "ADA", req.Meta)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "failed to build compliance report", err.Error())
-		return
-	}
-
-	opts := report.DDAOptions{Format: req.Format}
-	html, pdf, err := report.GenerateDDA(compReport, opts)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "failed to generate DDA report", err.Error())
-		return
-	}
-
-	if req.Format == "pdf" {
-		w.Header().Set("Content-Type", "application/pdf")
-		w.Header().Set("Content-Disposition", `attachment; filename="dda_report.pdf"`)
-		w.Write(pdf)
-	} else {
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		w.Write([]byte(html))
-	}
-}
-
-// ReportGIGW handles POST /api/v1/report/gigw
-func (h *Handler) ReportGIGW(w http.ResponseWriter, r *http.Request) {
-	req, result, err := h.processReportRequest(w, r)
-	if err != nil {
-		return
-	}
-
-	compReport, err := scoring.BuildComplianceReport(result, "ADA", req.Meta)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "failed to build compliance report", err.Error())
-		return
-	}
-
-	opts := report.GIGWOptions{Format: req.Format}
-	html, pdf, err := report.GenerateGIGW(compReport, opts)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "failed to generate GIGW report", err.Error())
-		return
-	}
-
-	if req.Format == "pdf" {
-		w.Header().Set("Content-Type", "application/pdf")
-		w.Header().Set("Content-Disposition", `attachment; filename="gigw_report.pdf"`)
-		w.Write(pdf)
-	} else {
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		w.Write([]byte(html))
-	}
-}
-
-// ReportCVAA handles POST /api/v1/report/cvaa
-func (h *Handler) ReportCVAA(w http.ResponseWriter, r *http.Request) {
-	req, result, err := h.processReportRequest(w, r)
-	if err != nil {
-		return
-	}
-
-	compReport, err := scoring.BuildComplianceReport(result, "ADA", req.Meta)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "failed to build compliance report", err.Error())
-		return
-	}
-
-	opts := report.CVAAOptions{Format: req.Format}
-	html, pdf, err := report.GenerateCVAA(compReport, opts)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "failed to generate CVAA report", err.Error())
-		return
-	}
-
-	if req.Format == "pdf" {
-		w.Header().Set("Content-Type", "application/pdf")
-		w.Header().Set("Content-Disposition", `attachment; filename="cvaa_report.pdf"`)
-		w.Write(pdf)
-	} else {
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		w.Write([]byte(html))
-	}
-}
-
-// ReportEAA handles POST /api/v1/report/eaa (European Accessibility Act)
-func (h *Handler) ReportEAA(w http.ResponseWriter, r *http.Request) {
-	req, result, err := h.processReportRequest(w, r)
-	if err != nil {
-		return
-	}
-
-	compReport, err := scoring.BuildComplianceReport(result, "EN301549", req.Meta)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "failed to build compliance report", err.Error())
-		return
-	}
-
-	opts := report.EN301549Options{Format: req.Format, ReportType: "EAA"}
-	html, pdf, err := report.GenerateEN301549(compReport, opts)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "failed to generate EAA report", err.Error())
-		return
-	}
-
-	if req.Format == "pdf" {
-		w.Header().Set("Content-Type", "application/pdf")
-		w.Header().Set("Content-Disposition", `attachment; filename="eaa_report.pdf"`)
-		w.Write(pdf)
-	} else {
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		w.Write([]byte(html))
-	}
-}
-
-// ReportBITV handles POST /api/v1/report/bitv (German BITV 2.0)
-func (h *Handler) ReportBITV(w http.ResponseWriter, r *http.Request) {
-	req, result, err := h.processReportRequest(w, r)
-	if err != nil {
-		return
-	}
-
-	compReport, err := scoring.BuildComplianceReport(result, "EN301549", req.Meta)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "failed to build compliance report", err.Error())
-		return
-	}
-
-	opts := report.EN301549Options{Format: req.Format, ReportType: "BITV"}
-	html, pdf, err := report.GenerateEN301549(compReport, opts)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "failed to generate BITV report", err.Error())
-		return
-	}
-
-	if req.Format == "pdf" {
-		w.Header().Set("Content-Type", "application/pdf")
-		w.Header().Set("Content-Disposition", `attachment; filename="bitv_report.pdf"`)
-		w.Write(pdf)
-	} else {
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		w.Write([]byte(html))
+// Report returns the handler for POST /api/v1/report/{name}.
+func (h *Handler) Report(name string) http.HandlerFunc {
+	spec := reportSpecs[name]
+	return func(w http.ResponseWriter, r *http.Request) {
+		req, result, err := h.processReportRequest(w, r)
+		if err != nil {
+			return
+		}
+		compReport, err := scoring.BuildComplianceReport(result, spec.standard, req.Meta)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to build compliance report", err.Error())
+			return
+		}
+		html, pdf, err := spec.generate(result, compReport, req)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to generate "+spec.label+" report", err.Error())
+			return
+		}
+		if req.Format == "pdf" {
+			w.Header().Set("Content-Type", "application/pdf")
+			w.Header().Set("Content-Disposition", `attachment; filename="`+name+`_report.pdf"`)
+			w.Write(pdf)
+		} else {
+			w.Header().Set("Content-Type", "text/html; charset=utf-8")
+			w.Write([]byte(html))
+		}
 	}
 }
 

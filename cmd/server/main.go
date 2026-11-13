@@ -36,6 +36,7 @@ func main() {
 
 	// Scanner
 	axeRunner := scanner.NewAxeRunner(cfg.NodeBin, cfg.AxeRunnerScript, cfg.NativeRunnerScript)
+	defer axeRunner.Close()
 	coveragePath := os.Getenv("WCAG_COVERAGE_REPORT")
 	if coveragePath == "" {
 		coveragePath = "wcag_coverage_report.xlsx"
@@ -57,6 +58,12 @@ func main() {
 	// Visits
 	visitStore := visits.NewStore(cfg.VisitStorePath)
 
+	// Stored scan results (reports and extension report links read from here)
+	resultDir := os.Getenv("REPORT_STORE_DIR")
+	if resultDir == "" {
+		resultDir = "data/reports"
+	}
+
 	// Handler
 	h := &api.Handler{
 		Scanner:      axeRunner,
@@ -67,6 +74,7 @@ func main() {
 		LeadStore:    leadStore,
 		LeadNotifier: leadNotifier,
 		VisitStore:   visitStore,
+		Results:      api.NewResultStore(resultDir),
 	}
 
 	// Router

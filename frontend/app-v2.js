@@ -1654,6 +1654,9 @@ async function generateComplianceReportDirect(standard, format, meta, scanData) 
     const apiEndpoint = `/api/v1/report/${endpoint}`;
     const payload = {
       url: scanData.url,
+      // Lets the server build the report from the scan already shown,
+      // instead of scanning the page a second time.
+      scan_id: scanData.scan_id || scanData.report_id || undefined,
       format: format || 'html',
       meta: meta || {},
     };

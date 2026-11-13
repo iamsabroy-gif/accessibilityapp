@@ -59,6 +59,8 @@ a11yscan <url...> [--urls-file urls.txt]
   --format json,sarif,junit  (default json)
   --output-dir ./results     (default ./a11y-results)
   --timeout 180              (default 180 seconds)
+  --baseline a11y-baseline.json   only report violations not in this file
+  --update-baseline          record all current violations in the --baseline file
 ```
 
 ### Exit Codes
@@ -97,6 +99,19 @@ urls:
   - https://your-app.com
   - https://your-app.com/login
 ```
+
+## Baseline (fail only on new violations)
+
+To adopt the scanner on a site that already has violations, record them once and
+commit the file:
+
+```
+a11yscan https://your-app.com --baseline a11y-baseline.json --update-baseline
+```
+
+Later runs with `--baseline a11y-baseline.json` suppress those known violations, so
+the build fails only when a new one appears. Re-run with `--update-baseline` after
+fixing issues to shrink the baseline.
 
 ## Output Formats
 

@@ -88,6 +88,7 @@ type Summary struct {
 
 // ScanResult is the full response payload returned after a scan.
 type ScanResult struct {
+	ScanID               string          `json:"scan_id,omitempty"` // ID of the stored result; pass it to /report/* to avoid a re-scan
 	URL                  string          `json:"url"`
 	ScannedAt            time.Time       `json:"scanned_at"`
 	DurationMs           int64           `json:"duration_ms"`

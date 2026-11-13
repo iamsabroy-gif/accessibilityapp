@@ -1,4 +1,4 @@
-const puppeteer = require('puppeteer');
+const puppeteer = require('puppeteer-core');
 const fs = require('fs');
 
 (async () => {
@@ -10,7 +10,14 @@ const fs = require('fs');
         process.exit(1);
     }
 
+    // puppeteer-core does not bundle a browser, so use the same Chromium as the scanner.
+    let executablePath = process.env.CHROMIUM_PATH || process.env.PUPPETEER_EXECUTABLE_PATH || '/usr/bin/chromium-browser';
+    if (!process.env.CHROMIUM_PATH && !process.env.PUPPETEER_EXECUTABLE_PATH && process.platform === 'darwin') {
+        executablePath = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
+    }
+
     const browser = await puppeteer.launch({
+        executablePath,
         headless: 'new',
         args: ['--no-sandbox', '--disable-setuid-sandbox']
     });

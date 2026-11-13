@@ -14,7 +14,8 @@
 const { Command } = require('commander');
 const path = require('path');
 const fs = require('fs');
-const { scan } = require('../src/scan');
+const { scan, launchBrowser } = require('../src/scan');
+const { fingerprintsOf, loadBaseline, saveBaseline, filterNew } = require('../src/baseline');
 const { evaluateThreshold } = require('../src/threshold');
 const { formatJSON } = require('../src/format/json');
 const { formatSARIF } = require('../src/format/sarif');
@@ -34,6 +35,8 @@ program
   .option('--format <formats>', 'Output formats (comma-separated): json, sarif, junit', 'json')
   .option('--output-dir <dir>', 'Directory to write results', './a11y-results')
   .option('--timeout <seconds>', 'Page navigation timeout in seconds', '180')
+  .option('--baseline <file>', 'Baseline file of known violations; only violations not in it are reported')
+  .option('--update-baseline', 'Write all current violations to the --baseline file and treat them as known')
   .action(async (urls, options) => {
     // Collect URLs from arguments and --urls-file
     const allUrls = [...urls];
@@ -93,6 +96,30 @@ program
     let globalExitCode = 0;
     let hadScanError = false;
 
+    if (options.updateBaseline && !options.baseline) {
+      console.error('Error: --update-baseline requires --baseline <file>.');
+      process.exit(2);
+    }
+    let baseline = null;
+    if (options.baseline) {
+      try {
+        baseline = loadBaseline(options.baseline);
+      } catch (e) {
+        console.error(`Error: Could not read baseline '${options.baseline}': ${e.message}`);
+        process.exit(2);
+      }
+    }
+    const currentFingerprints = [];
+
+    // One browser is shared by every URL in this run.
+    let browser;
+    try {
+      browser = await launchBrowser();
+    } catch (e) {
+      console.error(`Error: Could not launch browser: ${e.message}`);
+      process.exit(2);
+    }
+
     console.log(`\n🔍 a11yscan v0.1.0`);
     console.log(`   WCAG Level: ${options.wcagLevel.toUpperCase()}`);
     console.log(`   Fail on: ${options.failOn} | Warn on: ${options.warnOn}`);
@@ -105,15 +132,40 @@ program
 
       console.log(`${urlLabel}Scanning: ${url}`);
 
+      // If the shared browser died, start a new one for the remaining URLs.
+      if (!browser.isConnected()) {
+        try {
+          browser = await launchBrowser();
+        } catch (e) {
+          console.error(`  ❌ Scan error: could not relaunch browser: ${e.message}`);
+          hadScanError = true;
+          continue;
+        }
+      }
+
       const scanResult = await scan(url, {
         wcagLevel: options.wcagLevel,
         timeout,
+        browser,
       });
 
       if (scanResult.error) {
         console.error(`  ❌ Scan error: ${scanResult.error}`);
         hadScanError = true;
         continue;
+      }
+
+      if (baseline) {
+        currentFingerprints.push(...fingerprintsOf(scanResult));
+        if (options.updateBaseline) {
+          const known = scanResult.violations.reduce((n, v) => n + Math.max(1, (v.nodes || []).length), 0);
+          scanResult.violations = [];
+          console.log(`  📌 ${known} violation node(s) recorded in baseline`);
+        } else {
+          const { violations, suppressed } = filterNew(scanResult, baseline);
+          scanResult.violations = violations;
+          if (suppressed > 0) console.log(`  📌 ${suppressed} known violation node(s) suppressed by baseline`);
+        }
       }
 
       // Apply threshold evaluation
@@ -167,6 +219,13 @@ program
       }
 
       console.log('');
+    }
+
+    await browser.close().catch(() => {});
+
+    if (options.updateBaseline && !hadScanError) {
+      saveBaseline(options.baseline, currentFingerprints);
+      console.log(`📌 Baseline written: ${options.baseline}`);
     }
 
     // Final summary

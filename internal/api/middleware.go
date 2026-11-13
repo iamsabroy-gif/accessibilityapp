@@ -2,7 +2,7 @@ package api
 
 import (
 	"net/http"
-	"strings"
+	"time"
 
 	"github.com/go-chi/httprate"
 	"go.uber.org/zap"
@@ -49,29 +49,14 @@ func corsMiddleware(next http.Handler) http.Handler {
 	})
 }
 
-// rateLimitMiddleware limits each IP to 10 requests per minute.
+// rateLimitMiddleware limits each client IP to 60 requests per minute on the
+// scan, report and lead endpoints. A multi-page scan alone makes 11 scan
+// requests, so the limit leaves room for a few of those plus report downloads.
+//
+// The key is the client IP as reported by the reverse proxy (X-Forwarded-For),
+// because behind a proxy every request shares the proxy's remote address.
 func rateLimitMiddleware() func(http.Handler) http.Handler {
-	return httprate.LimitByIP(10, 1) // 10 req per 1 minute
-}
-
-// ssrfGuard rejects requests to private/internal IP ranges to prevent SSRF.
-func ssrfGuard(next http.Handler) http.Handler {
-	blocked := []string{
-		"localhost", "127.", "10.", "192.168.", "172.16.", "172.17.",
-		"172.18.", "172.19.", "172.20.", "172.21.", "172.22.", "172.23.",
-		"172.24.", "172.25.", "172.26.", "172.27.", "172.28.", "172.29.",
-		"172.30.", "172.31.", "::1", "0.0.0.0",
-	}
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if targetURL := r.Header.Get("X-Scan-URL"); targetURL != "" {
-			lower := strings.ToLower(targetURL)
-			for _, b := range blocked {
-				if strings.Contains(lower, b) {
-					http.Error(w, `{"error":"scanning private/internal addresses is not allowed"}`, http.StatusForbidden)
-					return
-				}
-			}
-		}
-		next.ServeHTTP(w, r)
-	})
+	return httprate.Limit(60, time.Minute, httprate.WithKeyFuncs(
+		func(r *http.Request) (string, error) { return getClientIP(r), nil },
+	))
 }
