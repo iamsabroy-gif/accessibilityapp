@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/golang-jwt/jwt/v4"
+	"github.com/webaccessibility/server/internal/access"
 	"github.com/webaccessibility/server/internal/config"
 	"github.com/webaccessibility/server/internal/coverage"
 	"github.com/webaccessibility/server/internal/leads"
@@ -39,6 +40,10 @@ type Handler struct {
 	LeadStore    *leads.Store
 	LeadNotifier leads.Notifier
 	VisitStore   *visits.Store
+	// Access holds returning-user access requests; AccessMailer emails the
+	// owner and users about them. Both optional.
+	Access       *access.Store
+	AccessMailer access.Mailer
 	activeScans  int32
 
 	// Results holds recent scan results for reports and the extension's
@@ -68,12 +73,13 @@ func (h *Handler) Health(w http.ResponseWriter, r *http.Request) {
 // Info handles GET /api/v1/
 func (h *Handler) Info(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"name":                 "Web Accessibility API",
-		"version":              "1.0.0",
-		"description":          "WCAG accessibility scanning API powered by axe-core",
-		"max_concurrent_scans": config.GetMaxConcurrentScans(),
-		"pdf_scanning_visible": config.GetPDFScanningVisible(),
-		"endpoints":            []string{"POST /api/v1/scan", "POST /api/v1/score", "GET  /api/v1/health", "GET  /api/v1/", "POST /api/v1/token", "POST /api/v1/secret", "GET  /api/v1/secret"},
+		"name":                    "Web Accessibility API",
+		"version":                 "1.0.0",
+		"description":             "WCAG accessibility scanning API powered by axe-core",
+		"max_concurrent_scans":    config.GetMaxConcurrentScans(),
+		"pdf_scanning_visible":    config.GetPDFScanningVisible(),
+		"access_approval_enabled": config.GetAccessApprovalEnabled(),
+		"endpoints":               []string{"POST /api/v1/scan", "POST /api/v1/score", "GET  /api/v1/health", "GET  /api/v1/", "POST /api/v1/token", "POST /api/v1/secret", "GET  /api/v1/secret"},
 	})
 }
 
@@ -381,11 +387,12 @@ func (h *Handler) SetSecret(w http.ResponseWriter, r *http.Request) {
 // GetSettings handles GET /api/v1/admin/settings
 func (h *Handler) GetSettings(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"max_concurrent_scans": config.GetMaxConcurrentScans(),
-		"scoring_formula":      config.GetScoringFormula(),
-		"active_engine":        config.GetActiveEngine(),
-		"pdf_scanning_visible": config.GetPDFScanningVisible(),
-		"landing_page_enabled": config.GetLandingPageEnabled(),
+		"max_concurrent_scans":    config.GetMaxConcurrentScans(),
+		"scoring_formula":         config.GetScoringFormula(),
+		"active_engine":           config.GetActiveEngine(),
+		"pdf_scanning_visible":    config.GetPDFScanningVisible(),
+		"landing_page_enabled":    config.GetLandingPageEnabled(),
+		"access_approval_enabled": config.GetAccessApprovalEnabled(),
 	})
 }
 
@@ -400,6 +407,8 @@ func (h *Handler) UpdateSettings(w http.ResponseWriter, r *http.Request) {
 		PDFScanningVisible *bool `json:"pdf_scanning_visible"`
 		// LandingPageEnabled uses *bool for the same explicit-false reason.
 		LandingPageEnabled *bool `json:"landing_page_enabled"`
+		// AccessApprovalEnabled turns the returning-user approval flow on/off.
+		AccessApprovalEnabled *bool `json:"access_approval_enabled"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body", err.Error())
@@ -429,12 +438,17 @@ func (h *Handler) UpdateSettings(w http.ResponseWriter, r *http.Request) {
 		config.SetLandingPageEnabled(*req.LandingPageEnabled)
 		h.Logger.Info("landing_page_enabled updated via API", zap.Bool("landing_page_enabled", *req.LandingPageEnabled))
 	}
+	if req.AccessApprovalEnabled != nil {
+		config.SetAccessApprovalEnabled(*req.AccessApprovalEnabled)
+		h.Logger.Info("access_approval_enabled updated via API", zap.Bool("access_approval_enabled", *req.AccessApprovalEnabled))
+	}
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"max_concurrent_scans": config.GetMaxConcurrentScans(),
-		"scoring_formula":      config.GetScoringFormula(),
-		"active_engine":        config.GetActiveEngine(),
-		"pdf_scanning_visible": config.GetPDFScanningVisible(),
-		"landing_page_enabled": config.GetLandingPageEnabled(),
+		"max_concurrent_scans":    config.GetMaxConcurrentScans(),
+		"scoring_formula":         config.GetScoringFormula(),
+		"active_engine":           config.GetActiveEngine(),
+		"pdf_scanning_visible":    config.GetPDFScanningVisible(),
+		"landing_page_enabled":    config.GetLandingPageEnabled(),
+		"access_approval_enabled": config.GetAccessApprovalEnabled(),
 	})
 }
 

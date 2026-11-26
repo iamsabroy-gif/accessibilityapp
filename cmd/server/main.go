@@ -11,6 +11,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/webaccessibility/server/internal/access"
 	"github.com/webaccessibility/server/internal/api"
 	"github.com/webaccessibility/server/internal/config"
 	"github.com/webaccessibility/server/internal/coverage"
@@ -60,6 +61,23 @@ func main() {
 	// Visits
 	visitStore := visits.NewStore(cfg.VisitStorePath)
 
+	// Returning-user access approval
+	accessStore, err := access.NewStore(cfg.AccessStorePath)
+	if err != nil {
+		logger.Fatal("failed to load access store", zap.Error(err))
+	}
+	accessMailer := &access.SMTPMailer{
+		Host:     cfg.SMTPHost,
+		Port:     cfg.SMTPPort,
+		Username: cfg.SMTPUsername,
+		Password: cfg.SMTPPassword,
+		From:     cfg.SMTPFrom,
+		Logger:   logger,
+	}
+	if cfg.AccessApprovalEnabled && !accessMailer.Configured() {
+		logger.Warn("ACCESS_APPROVAL_ENABLED is set but SMTP is not configured; approval emails will not be sent")
+	}
+
 	// Stored scan results (reports and extension report links read from here)
 	resultDir := os.Getenv("REPORT_STORE_DIR")
 	if resultDir == "" {
@@ -76,6 +94,8 @@ func main() {
 		LeadStore:    leadStore,
 		LeadNotifier: leadNotifier,
 		VisitStore:   visitStore,
+		Access:       accessStore,
+		AccessMailer: accessMailer,
 		Results:      api.NewResultStore(resultDir),
 	}
 

@@ -48,6 +48,13 @@ type Config struct {
 	// VisitTrackingEnabled controls whether returning visit telemetry is recorded.
 	VisitTrackingEnabled bool
 	VisitStorePath       string
+	// AccessApprovalEnabled makes returning users request owner approval and
+	// scan with a limited-use access code. Default false.
+	AccessApprovalEnabled bool
+	AccessStorePath       string
+	AccessDefaultScans    int    // scans included in a newly approved code
+	AccessCodeTTLDays     int    // days an approved code stays valid (0 = no expiry)
+	PublicBaseURL         string // e.g. https://accessscan.example.com, used in email links
 }
 
 // global holds the runtime configuration and is accessed concurrently.
@@ -352,6 +359,53 @@ func GetSMTPFrom() string {
 	return global.SMTPFrom
 }
 
+// GetAccessApprovalEnabled returns whether returning users need owner approval.
+func GetAccessApprovalEnabled() bool {
+	mu.RLock()
+	defer mu.RUnlock()
+	return global != nil && global.AccessApprovalEnabled
+}
+
+// SetAccessApprovalEnabled toggles the returning-user approval flow at runtime.
+func SetAccessApprovalEnabled(e bool) {
+	mu.Lock()
+	defer mu.Unlock()
+	if global == nil {
+		global = &Config{}
+	}
+	global.AccessApprovalEnabled = e
+}
+
+// GetAccessDefaultScans returns the scans included in a newly approved code.
+func GetAccessDefaultScans() int {
+	mu.RLock()
+	defer mu.RUnlock()
+	if global == nil || global.AccessDefaultScans <= 0 {
+		return 20
+	}
+	return global.AccessDefaultScans
+}
+
+// GetAccessCodeTTLDays returns how many days an approved code stays valid (0 = forever).
+func GetAccessCodeTTLDays() int {
+	mu.RLock()
+	defer mu.RUnlock()
+	if global == nil || global.AccessCodeTTLDays < 0 {
+		return 0
+	}
+	return global.AccessCodeTTLDays
+}
+
+// GetPublicBaseURL returns the configured public site URL without a trailing slash.
+func GetPublicBaseURL() string {
+	mu.RLock()
+	defer mu.RUnlock()
+	if global == nil {
+		return ""
+	}
+	return strings.TrimRight(global.PublicBaseURL, "/")
+}
+
 // SetSecret updates the JWT secret at runtime.
 func SetSecret(newSecret string) {
 	mu.Lock()
@@ -386,31 +440,36 @@ func Load() *Config {
 		formula = "compliance"
 	}
 	return &Config{
-		Port:               getEnv("PORT", "8080"),
-		ScanTimeoutSeconds: getEnvInt("SCAN_TIMEOUT_SECONDS", 180),
-		WCAGLevel:          getEnv("WCAG_LEVEL", "AA"),
-		MaxConcurrentScans: getEnvInt("MAX_CONCURRENT_SCANS", 5),
-		JWTSecret:          secret,
-		AdminPassword:      getEnv("ADMIN_PASSWORD", ""),
-		NodeBin:            getEnv("NODE_BIN", "node"),
-		AxeRunnerScript:    getEnv("AXE_RUNNER_SCRIPT", "scripts/axe_runner.js"),
-		NativeRunnerScript: getEnv("NATIVE_RUNNER_SCRIPT", "scripts/native_runner.js"),
-		AllowPrivateScans:   getEnvBool("ALLOW_PRIVATE_SCANS", false),
-		ScoringFormula:      formula,
-		ActiveEngine:        getEnv("ACTIVE_ENGINE", "native"),
-		PDFScanningVisible:  getEnvBool("PDF_SCANNING_VISIBLE", false),
-		LandingPageEnabled:  getEnvBool("LANDING_PAGE_ENABLED", true),
-		LeadCaptureEnabled:  getEnvBool("LEAD_CAPTURE_ENABLED", false),
-		LeadNotifyEmail:    getEnv("LEAD_NOTIFY_EMAIL", "iamsabroy@gmail.com"),
-		LeadStorePath:      getEnv("LEAD_STORE_PATH", "data/leads.jsonl"),
-		LeadIPSalt:         getEnv("LEAD_IP_SALT", ""),
-		SMTPHost:           getEnv("SMTP_HOST", ""),
-		SMTPPort:           getEnvInt("SMTP_PORT", 587),
-		SMTPUsername:       getEnv("SMTP_USERNAME", ""),
-		SMTPPassword:       getEnv("SMTP_PASSWORD", ""),
-		SMTPFrom:           getEnv("SMTP_FROM", ""),
-		VisitTrackingEnabled: getEnvBool("VISIT_TRACKING_ENABLED", false),
-		VisitStorePath:       getEnv("VISIT_STORE_PATH", "data/visits.jsonl"),
+		Port:                  getEnv("PORT", "8080"),
+		ScanTimeoutSeconds:    getEnvInt("SCAN_TIMEOUT_SECONDS", 180),
+		WCAGLevel:             getEnv("WCAG_LEVEL", "AA"),
+		MaxConcurrentScans:    getEnvInt("MAX_CONCURRENT_SCANS", 5),
+		JWTSecret:             secret,
+		AdminPassword:         getEnv("ADMIN_PASSWORD", ""),
+		NodeBin:               getEnv("NODE_BIN", "node"),
+		AxeRunnerScript:       getEnv("AXE_RUNNER_SCRIPT", "scripts/axe_runner.js"),
+		NativeRunnerScript:    getEnv("NATIVE_RUNNER_SCRIPT", "scripts/native_runner.js"),
+		AllowPrivateScans:     getEnvBool("ALLOW_PRIVATE_SCANS", false),
+		ScoringFormula:        formula,
+		ActiveEngine:          getEnv("ACTIVE_ENGINE", "native"),
+		PDFScanningVisible:    getEnvBool("PDF_SCANNING_VISIBLE", false),
+		LandingPageEnabled:    getEnvBool("LANDING_PAGE_ENABLED", true),
+		LeadCaptureEnabled:    getEnvBool("LEAD_CAPTURE_ENABLED", false),
+		LeadNotifyEmail:       getEnv("LEAD_NOTIFY_EMAIL", "iamsabroy@gmail.com"),
+		LeadStorePath:         getEnv("LEAD_STORE_PATH", "data/leads.jsonl"),
+		LeadIPSalt:            getEnv("LEAD_IP_SALT", ""),
+		SMTPHost:              getEnv("SMTP_HOST", ""),
+		SMTPPort:              getEnvInt("SMTP_PORT", 587),
+		SMTPUsername:          getEnv("SMTP_USERNAME", ""),
+		SMTPPassword:          getEnv("SMTP_PASSWORD", ""),
+		SMTPFrom:              getEnv("SMTP_FROM", ""),
+		VisitTrackingEnabled:  getEnvBool("VISIT_TRACKING_ENABLED", false),
+		VisitStorePath:        getEnv("VISIT_STORE_PATH", "data/visits.jsonl"),
+		AccessApprovalEnabled: getEnvBool("ACCESS_APPROVAL_ENABLED", false),
+		AccessStorePath:       getEnv("ACCESS_STORE_PATH", "data/access.json"),
+		AccessDefaultScans:    getEnvInt("ACCESS_DEFAULT_SCANS", 20),
+		AccessCodeTTLDays:     getEnvInt("ACCESS_CODE_TTL_DAYS", 30),
+		PublicBaseURL:         getEnv("PUBLIC_BASE_URL", ""),
 	}
 }
 

@@ -172,6 +172,7 @@
             </div>
           </div>
         </form>
+        <p id="access-remaining-note" role="status" aria-live="polite" hidden style="margin-top:0.75rem; font-size:0.85rem; color:var(--text-muted, #64748b);"></p>
 
         <!-- PDF scanning coming-soon card: server-driven visibility (pdf_scanning_visible from GET /api/v1/) -->
         <div id="pdf-coming-soon" hidden aria-hidden="true" style="margin-top: 2rem; padding: 1.25rem 1.5rem; background: linear-gradient(135deg, rgba(99,102,241,0.12) 0%, rgba(168,85,247,0.08) 100%); border: 1px solid rgba(99,102,241,0.3); border-radius: 12px; text-align: left;">
@@ -579,6 +580,54 @@
           </button>
         </div>
       </form>
+    </div>
+  </div>
+
+  <!-- Returning-user access modal: request owner approval, or enter an emailed access code -->
+  <div
+    id="app-access-modal"
+    class="modal-wrap"
+    role="dialog"
+    aria-modal="true"
+    aria-labelledby="app-access-title"
+    aria-hidden="true"
+    inert
+  >
+    <div class="modal-overlay"></div>
+    <div class="modal-box" style="max-width:460px;">
+      <div class="modal-header">
+        <span class="modal-icon" aria-hidden="true">🔑</span>
+        <div>
+          <div class="modal-title" id="app-access-title">Welcome back</div>
+          <div class="modal-subtitle">Returning users need an approved access code to keep scanning.</div>
+        </div>
+      </div>
+      <div class="modal-body">
+        <p id="app-access-notice" class="modal-error" role="alert" aria-live="polite" style="display:none;"></p>
+
+        <form id="app-access-code-form" novalidate>
+          <label for="app-access-code" class="form-label" style="font-size:0.85rem;">Have an access code?</label>
+          <input id="app-access-code" type="text" required placeholder="AS-…" autocomplete="off" spellcheck="false" class="modal-input" />
+          <button id="app-access-code-submit" class="modal-btn-primary" type="submit" style="width:100%; margin-top:0.6rem;">
+            Use Code &amp; Start Scan →
+          </button>
+        </form>
+
+        <hr style="border:none; border-top:1px solid var(--border, rgba(148,163,184,0.3)); margin:1.25rem 0;" />
+
+        <form id="app-access-request-form" novalidate>
+          <input type="text" name="website" tabIndex="-1" style="display:none !important; position:absolute; left:-9999px;" autocomplete="off" />
+          <label for="app-access-email" class="form-label" style="font-size:0.85rem;">No code yet? Request access</label>
+          <input id="app-access-email" type="email" required placeholder="you@company.com" autocomplete="email" class="modal-input" />
+          <button id="app-access-request-submit" class="modal-btn-secondary" type="submit" style="width:100%; margin-top:0.6rem;">
+            Request Access
+          </button>
+          <p id="app-access-request-status" role="status" aria-live="polite" style="font-size:0.8rem; margin-top:0.5rem; line-height:1.4; display:none;"></p>
+        </form>
+      </div>
+      <div class="modal-footer">
+        <button id="app-access-cancel" class="modal-btn-secondary" type="button" style="width:100%;">Close</button>
+      </div>
     </div>
   </div>
 

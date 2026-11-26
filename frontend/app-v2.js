@@ -12,6 +12,8 @@
 const DEFAULT_API_BASE  = 'https://www.accessscan.in';
 const LS_KEY_TOKEN      = 'wacs_token';
 const LS_KEY_TOKEN_EXP  = 'wacs_token_exp';
+const LS_KEY_TOKEN_KIND = 'wacs_token_kind';        // 'guest' or 'access'
+const LS_KEY_ACCESS_CODE = 'accessscan_access_code'; // approved code for returning users
 const LS_KEY_SCAN_MODE   = 'wacs_scan_mode'; // 'parallel' or 'serial'
 
 // Token refresh buffer — refresh when less than this time remains (ms)
@@ -24,6 +26,8 @@ let adminClickTimer = null;
 // ─── State ────────────────────────────────────────────────────
 const state = {
   view: 'hero',
+  accessApprovalEnabled: false,   // from GET /api/v1/ (see "Returning-user access approval")
+  infoReady: Promise.resolve(),
   scanResult: null,
   token: null,
   tokenExp: null,
@@ -165,10 +169,16 @@ function renderCoverageRows() {
 // ─── Session / Token Management ───────────────────────────────
 // All visitors get a JWT automatically. No secret needed from the client.
 async function ensureToken() {
-  // Use cached token if still valid
+  // Returning users with an approved access code scan with a token tied to it,
+  // so the server can count their scans. Everyone else gets a guest token.
+  const code = state.accessApprovalEnabled ? getAccessCode() : '';
+  const kind = code ? 'access' : 'guest';
+
+  // Use cached token if still valid and of the right kind
   const cached    = localStorage.getItem(LS_KEY_TOKEN);
   const cachedExp = parseInt(localStorage.getItem(LS_KEY_TOKEN_EXP) || '0', 10);
-  if (cached && Date.now() < cachedExp - TOKEN_REFRESH_BUFFER_MS) {
+  const cachedKind = localStorage.getItem(LS_KEY_TOKEN_KIND) || 'guest';
+  if (cached && cachedKind === kind && Date.now() < cachedExp - TOKEN_REFRESH_BUFFER_MS) {
     state.token    = cached;
     state.tokenExp = cachedExp;
     return true;
@@ -176,9 +186,20 @@ async function ensureToken() {
 
   // Request a fresh session token from the server
   try {
-    const res  = await fetch(`${apiBase()}/api/v1/session`);
+    const res = code
+      ? await fetch(`${apiBase()}/api/v1/access/session`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ code }),
+        })
+      : await fetch(`${apiBase()}/api/v1/session`);
     const data = await res.json();
+    if (code && res.status === 403) {
+      handleAccessDenied(data);
+      return false;
+    }
     if (!res.ok) throw new Error(data.error || 'Session request failed');
+    if (code) showAccessRemaining(data.remaining);
 
     const expiresIn = (data.expires_in || 1200) * 1000; // convert s → ms
     const exp       = Date.now() + expiresIn;
@@ -187,6 +208,7 @@ async function ensureToken() {
     state.tokenExp = exp;
     localStorage.setItem(LS_KEY_TOKEN,     data.token);
     localStorage.setItem(LS_KEY_TOKEN_EXP, String(exp));
+    localStorage.setItem(LS_KEY_TOKEN_KIND, kind);
     return true;
   } catch (err) {
     showError(`Could not reach the API server: ${err.message}`);
@@ -258,7 +280,13 @@ async function runScan(url, wcagLevel, depth = 0, shouldGenerateReport = false, 
     }
 
     const data = await res.json();
+    if (isAccessError(res, data)) {
+      setView('hero');
+      handleAccessDenied(data, () => runScan(url, wcagLevel, depth, shouldGenerateReport, reportMeta, reportStandard, reportFormat));
+      return;
+    }
     if (!res.ok) throw new Error(data.error || 'Scan failed');
+    if (localStorage.getItem(LS_KEY_TOKEN_KIND) === 'access') refreshAccessRemaining();
 
     state.scanResult = data;
     data.embedded_results = [];
@@ -339,7 +367,13 @@ async function runCrawl(url, opts = {}) {
       res = await start();
     }
     const job = await res.json();
+    if (isAccessError(res, job)) {
+      setView('hero');
+      handleAccessDenied(job, () => runCrawl(url, opts));
+      return;
+    }
     if (!res.ok) throw new Error(job.error || 'Scan failed');
+    if (localStorage.getItem(LS_KEY_TOKEN_KIND) === 'access') refreshAccessRemaining();
 
     rememberCrawl(job.crawl_id);
     scheduleTokenRenewal();
@@ -2137,6 +2171,161 @@ function closeAppRegisterModal() {
 
 
 
+// ─── Returning-user access approval ───────────────────────────
+// A user who registered in an earlier browser session is "returning". When the
+// server has access approval turned on, returning users need an access code
+// that the owner approves; the code is emailed to them and limits their scans.
+
+function getAccessCode() {
+  try { return localStorage.getItem(LS_KEY_ACCESS_CODE) || ''; } catch (_) { return ''; }
+}
+
+function clearAccessToken() {
+  localStorage.removeItem(LS_KEY_TOKEN);
+  localStorage.removeItem(LS_KEY_TOKEN_EXP);
+  localStorage.removeItem(LS_KEY_TOKEN_KIND);
+  state.token = null;
+}
+
+function isReturningUser() {
+  return localStorage.getItem('accessscan_registered') === '1' && sessionStorage.getItem('accessscan_registered') !== '1';
+}
+
+function needsAccessCode() {
+  return state.accessApprovalEnabled && isReturningUser() && !getAccessCode();
+}
+
+function isAccessError(res, data) {
+  return res.status === 403 && data && typeof data.code === 'string' && data.code.startsWith('access_');
+}
+
+const ACCESS_MESSAGES = {
+  access_exhausted: 'Your access code has no scans left. Request access again to get a new one.',
+  access_expired:   'Your access code has expired. Request access again to get a new one.',
+  access_revoked:   'Your access code is no longer active. Request access again if you need it.',
+  access_invalid:   'That access code was not recognised. Check it and try again.',
+};
+
+function showAccessRemaining(remaining) {
+  const note = $('access-remaining-note');
+  if (!note || typeof remaining !== 'number') return;
+  note.textContent = `Access code active: ${remaining} scan${remaining === 1 ? '' : 's'} left.`;
+  note.hidden = false;
+}
+
+// Re-reads the scans left on the current code (exchanging it does not use a scan).
+async function refreshAccessRemaining() {
+  const code = getAccessCode();
+  if (!code) return;
+  try {
+    const res = await fetch(`${apiBase()}/api/v1/access/session`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ code }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (res.ok) showAccessRemaining(data.remaining);
+    else if (data.code === 'access_exhausted') showAccessRemaining(0);
+  } catch (_) {}
+}
+
+// The stored code can no longer be used: forget it and ask again.
+function handleAccessDenied(data, retry) {
+  try { localStorage.removeItem(LS_KEY_ACCESS_CODE); } catch (_) {}
+  clearAccessToken();
+  const note = $('access-remaining-note');
+  if (note) note.hidden = true;
+  openAccessModal(retry, ACCESS_MESSAGES[data && data.code] || (data && data.error) || '');
+}
+
+let pendingAccessCallback = null;
+
+function openAccessModal(onSuccess, message = '') {
+  pendingAccessCallback = typeof onSuccess === 'function' ? onSuccess : null;
+  const modal = $('app-access-modal');
+  if (!modal) return;
+  const notice = $('app-access-notice');
+  if (notice) {
+    notice.textContent = message;
+    notice.style.display = message ? 'block' : 'none';
+  }
+  const status = $('app-access-request-status');
+  if (status) { status.textContent = ''; status.style.display = 'none'; }
+  const emailInput = $('app-access-email');
+  if (emailInput && !emailInput.value) emailInput.value = localStorage.getItem('accessscan_user_email') || '';
+  const codeInput = $('app-access-code');
+  if (codeInput) codeInput.value = '';
+  modal.classList.add('open');
+  modal.setAttribute('aria-hidden', 'false');
+  modal.removeAttribute('inert');
+  document.body.style.overflow = 'hidden';
+  setTimeout(() => codeInput?.focus(), 100);
+}
+
+function closeAccessModal() {
+  const modal = $('app-access-modal');
+  if (!modal) return;
+  modal.classList.remove('open');
+  modal.setAttribute('aria-hidden', 'true');
+  modal.setAttribute('inert', '');
+  document.body.style.overflow = '';
+}
+
+async function submitAccessCode(e) {
+  e.preventDefault();
+  const input = $('app-access-code');
+  const btn = $('app-access-code-submit');
+  const notice = $('app-access-notice');
+  const code = input?.value.trim();
+  if (!code) { input?.focus(); return; }
+  if (btn) { btn.disabled = true; btn.textContent = 'Checking…'; }
+  try {
+    localStorage.setItem(LS_KEY_ACCESS_CODE, code);
+    clearAccessToken();
+    const ok = await ensureToken();  // validates the code; on failure re-opens with a message
+    if (!ok) return;
+    closeAccessModal();
+    scheduleTokenRenewal();
+    const cb = pendingAccessCallback;
+    pendingAccessCallback = null;
+    if (cb) cb();
+  } catch (err) {
+    if (notice) { notice.textContent = err.message || 'Could not check the code.'; notice.style.display = 'block'; }
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = 'Use Code & Start Scan →'; }
+  }
+}
+
+async function submitAccessRequest(e) {
+  e.preventDefault();
+  const input = $('app-access-email');
+  const btn = $('app-access-request-submit');
+  const status = $('app-access-request-status');
+  const email = input?.value.trim();
+  const show = (msg) => { if (status) { status.textContent = msg; status.style.display = 'block'; } };
+  if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    show('Please enter a valid email address.');
+    input?.focus();
+    return;
+  }
+  const honeypot = document.querySelector('#app-access-request-form input[name="website"]')?.value || '';
+  if (btn) { btn.disabled = true; btn.textContent = 'Sending…'; }
+  try {
+    const res = await fetch(`${apiBase()}/api/v1/access/request`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, website: honeypot }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || 'Request failed. Please try again.');
+    show(`Request sent. Once it's approved, we'll email your access code to ${email}.`);
+  } catch (err) {
+    show(err.message || 'Request failed. Please try again.');
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = 'Request Access'; }
+  }
+}
+
 // ─── Event Wiring ──────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', () => {
   // ── Return-visit telemetry ────────────────────────
@@ -2204,6 +2393,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
     if (!isUserRegistered()) {
       openAppRegisterModal(triggerScan);
+      return;
+    }
+
+    await state.infoReady;
+    if (needsAccessCode()) {
+      openAccessModal(triggerScan);
       return;
     }
 
@@ -2275,6 +2470,18 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   });
 
+  // ── Returning-user access modal ─────────────────
+  $('app-access-code-form')?.addEventListener('submit', submitAccessCode);
+  $('app-access-request-form')?.addEventListener('submit', submitAccessRequest);
+  $('app-access-cancel')?.addEventListener('click', () => { pendingAccessCallback = null; closeAccessModal(); });
+  document.querySelector('#app-access-modal .modal-overlay')?.addEventListener('click', () => { pendingAccessCallback = null; closeAccessModal(); });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && $('app-access-modal')?.classList.contains('open')) {
+      pendingAccessCallback = null;
+      closeAccessModal();
+    }
+  });
+
   // ── New Scan button ──────────────────────────────
   $('new-scan-btn')?.addEventListener('click', () => { stopFollowingCrawl(); setView('hero'); urlInput?.focus(); });
   $('download-report-btn')?.addEventListener('click', downloadUserReport);
@@ -2314,8 +2521,10 @@ document.addEventListener('DOMContentLoaded', () => {
   // Drive the PDF coming-soon card visibility from the public Info endpoint.
   // No auth required — pdf_scanning_visible is intentionally unauthenticated
   // (same precedent as max_concurrent_scans). Only controls UI copy, not access.
-  fetch(`${apiBase()}/api/v1/`).then(r => r.ok ? r.json() : null).then(info => {
+  state.infoReady = fetch(`${apiBase()}/api/v1/`).then(r => r.ok ? r.json() : null).then(info => {
     if (!info) return;
+    state.accessApprovalEnabled = info.access_approval_enabled === true;
+    if (state.accessApprovalEnabled && getAccessCode()) refreshAccessRemaining();
     const card = $('pdf-coming-soon');
     if (card) {
       const show = info.pdf_scanning_visible === true;
@@ -2333,7 +2542,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const cleanPath = window.location.pathname.endsWith('/app') ? window.location.pathname : '/app';
     window.history.replaceState(null, '', cleanPath);
 
-    ensureToken().then(async ok => {
+    const autoScan = () => ensureToken().then(async ok => {
       if (ok && scanBtn) {
         scanBtn.disabled = true;
         const depth = parseInt(document.querySelector('input[name="scan-depth"]:checked')?.value ?? '0', 10);
@@ -2341,6 +2550,7 @@ document.addEventListener('DOMContentLoaded', () => {
         scanBtn.disabled = false;
       }
     });
+    state.infoReady.then(() => (needsAccessCode() ? openAccessModal(autoScan) : autoScan()));
   }
 
   // Extension report deep-link: ?report=<id>

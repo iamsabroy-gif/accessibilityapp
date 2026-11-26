@@ -381,7 +381,7 @@ if (typeof module !== 'undefined' && module.exports) {
 
   // ─── WAI-ARIA Tabs Implementation ────────────────────────────────
 
-  const TAB_IDS = ['settings', 'activity', 'coverage'];
+  const TAB_IDS = ['settings', 'activity', 'access', 'coverage'];
 
   function switchTab(tabId, updateHash = true) {
     if (!TAB_IDS.includes(tabId)) tabId = 'settings';
@@ -416,6 +416,8 @@ if (typeof module !== 'undefined' && module.exports) {
       loadSettings();
     } else if (tabId === 'activity' && !state.activityData.loaded) {
       loadActivity();
+    } else if (tabId === 'access') {
+      loadAccess();
     }
 
     announce(`Switched to ${tabId} tab`);
@@ -1119,7 +1121,110 @@ if (typeof module !== 'undefined' && module.exports) {
 
   // ─── Main Init ───────────────────────────────────────────────────
 
+  // ─── Access Tab (returning-user approvals) ───────────────────────
+
+  let accessEnabled = false;
+
+  function accessCell(text, cls) {
+    const td = document.createElement('td');
+    if (cls) td.className = cls;
+    td.textContent = text;
+    return td;
+  }
+
+  async function loadAccess() {
+    const tbody = $('access-tbody');
+    const msg = $('access-state-message');
+    try {
+      const res = await adminFetch('/api/v1/admin/access');
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to load access requests');
+      accessEnabled = data.enabled === true;
+      $('access-enabled-state').textContent = accessEnabled ? 'On' : 'Off';
+      $('btn-toggle-access').textContent = accessEnabled ? 'Turn off' : 'Turn on';
+      $('access-defaults').textContent = `${data.default_scans} scans` + (data.ttl_days > 0 ? `, ${data.ttl_days} days` : ', no expiry');
+      const reqs = data.requests || [];
+      $('access-pending-count').textContent = String(reqs.filter(r => r.status === 'pending').length);
+
+      tbody.textContent = '';
+      reqs.forEach(r => {
+        const tr = document.createElement('tr');
+        tr.appendChild(accessCell(r.email, 'email-cell'));
+        tr.appendChild(accessCell(r.status));
+        tr.appendChild(accessCell(formatDateTime(r.requested_at)));
+        tr.appendChild(accessCell(r.status === 'approved' || r.status === 'revoked' ? `${r.used_scans} / ${r.max_scans}` : '—', 'num'));
+        tr.appendChild(accessCell(r.expires_at ? formatDateTime(r.expires_at) : '—'));
+        const actions = document.createElement('td');
+        const addBtn = (label, action) => {
+          const b = document.createElement('button');
+          b.type = 'button';
+          b.className = action === 'approve' ? 'btn-sm-primary' : 'btn-sm-secondary';
+          b.textContent = label;
+          b.setAttribute('aria-label', `${label} ${r.email}`);
+          b.addEventListener('click', () => decideAccess(r, action));
+          b.style.marginRight = '6px';
+          actions.appendChild(b);
+        };
+        if (r.status === 'pending') { addBtn('Approve', 'approve'); addBtn('Deny', 'deny'); }
+        if (r.status === 'approved') addBtn('Revoke', 'revoke');
+        tr.appendChild(actions);
+        tbody.appendChild(tr);
+      });
+      msg.textContent = reqs.length ? '' : 'No access requests yet.';
+      msg.classList.toggle('hidden', reqs.length > 0);
+    } catch (err) {
+      if (err.message === 'Session expired') return;
+      msg.textContent = err.message;
+      msg.classList.remove('hidden');
+    }
+  }
+
+  async function decideAccess(r, action) {
+    let body = {};
+    if (action === 'approve') {
+      const input = window.prompt(`Approve ${r.email}?\nScans to allow:`, $('access-defaults').textContent.split(' ')[0]);
+      if (input === null) return;
+      const n = parseInt(input, 10);
+      if (!(n > 0)) { showToast('Enter a positive number of scans.', 'error'); return; }
+      body = { max_scans: n };
+    } else if (!window.confirm(`${action === 'deny' ? 'Deny' : 'Revoke'} access for ${r.email}?`)) {
+      return;
+    }
+    try {
+      const res = await adminFetch(`/api/v1/admin/access/${encodeURIComponent(r.id)}/${action}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Action failed');
+      showToast(action === 'approve' ? `Approved — access code emailed to ${r.email}.` : `${r.email}: ${data.status}.`, 'success');
+      loadAccess();
+    } catch (err) {
+      if (err.message !== 'Session expired') showToast(err.message, 'error');
+    }
+  }
+
+  async function toggleAccess() {
+    try {
+      const res = await adminFetch('/api/v1/admin/settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ access_approval_enabled: !accessEnabled }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to update setting');
+      showToast(`Returning-user approval turned ${data.access_approval_enabled ? 'on' : 'off'} (until the server restarts; set ACCESS_APPROVAL_ENABLED to keep it).`, 'success', 8000);
+      loadAccess();
+    } catch (err) {
+      if (err.message !== 'Session expired') showToast(err.message, 'error');
+    }
+  }
+
   function init() {
+    $('btn-refresh-access')?.addEventListener('click', loadAccess);
+    $('btn-toggle-access')?.addEventListener('click', toggleAccess);
+
     // 1. Session check on page load
     state.session = loadStoredSession();
 

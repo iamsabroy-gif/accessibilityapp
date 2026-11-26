@@ -32,6 +32,9 @@ func NewRouter(h *Handler, logger *zap.Logger) *chi.Mux {
 		r.Get("/admin/settings", adminAuthMiddleware(h.GetSettings))
 		r.Post("/admin/settings", adminAuthMiddleware(h.UpdateSettings))
 		r.Get("/admin/activity", adminAuthMiddleware(h.GetActivity))
+		r.Get("/admin/access", adminAuthMiddleware(h.ListAccess))
+		r.Post("/admin/access/{id}/{action}", adminAuthMiddleware(h.AdminDecideAccess))
+		r.Get("/access/review", h.ReviewAccess) // owner's emailed review link (guarded by its key)
 		r.Get("/coverage", h.CoverageReport)
 		r.Get("/crawl/{id}", h.GetCrawl)                  // public: progress of a multi-page scan (polled)
 		r.Post("/crawl/{id}/cancel", h.CancelCrawl)       // public: stop a multi-page scan
@@ -42,11 +45,15 @@ func NewRouter(h *Handler, logger *zap.Logger) *chi.Mux {
 		// Rate-limit the expensive scan/score endpoints & public lead capture
 		r.Group(func(r chi.Router) {
 			r.Use(rateLimitMiddleware())
-			r.Post("/leads", h.CaptureLead)  // public + rate-limited
-			r.Post("/visit", h.CaptureVisit) // public + rate-limited
-			r.Post("/scan", jwtAuthMiddleware(h.Scan))
-			r.Post("/crawl", jwtAuthMiddleware(h.StartCrawl))
-			r.Post("/scan/client", jwtAuthMiddleware(h.ScanClient))
+			r.Post("/leads", h.CaptureLead)            // public + rate-limited
+			r.Post("/visit", h.CaptureVisit)           // public + rate-limited
+			r.Post("/access/request", h.RequestAccess) // returning user asks for access
+			r.Post("/access/session", h.AccessSession) // access code → scan token
+			r.Post("/access/review", h.DecideAccess)   // owner approves/denies
+			// Scan routes count scans made with an access-code token (see access.go).
+			r.Post("/scan", h.meteredAuth(h.Scan))
+			r.Post("/crawl", h.meteredAuth(h.StartCrawl))
+			r.Post("/scan/client", h.meteredAuth(h.ScanClient))
 			r.Post("/score", jwtAuthMiddleware(h.ScoreOnly))
 			for name := range reportSpecs {
 				r.Post("/report/"+name, jwtAuthMiddleware(h.Report(name)))

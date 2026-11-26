@@ -118,6 +118,16 @@
           </button>
           <button
             role="tab"
+            id="tab-access"
+            aria-selected="false"
+            aria-controls="panel-access"
+            tabindex="-1"
+            class="admin-tab"
+          >
+            Access
+          </button>
+          <button
+            role="tab"
             id="tab-coverage"
             aria-selected="false"
             aria-controls="panel-coverage"
@@ -457,6 +467,58 @@
 
           <p class="pii-notice">
             🔒 <strong>PII &amp; Privacy Notice:</strong> Emails and activity records are confidential. Exported CSVs are generated locally in your browser and contain user data.
+          </p>
+        </section>
+
+        <!-- ──────────────────────────────────────────
+             PANEL: ACCESS (returning-user approvals)
+        ────────────────────────────────────────── -->
+        <section
+          role="tabpanel"
+          id="panel-access"
+          aria-labelledby="tab-access"
+          class="admin-panel"
+          hidden
+        >
+          <div class="panel-header">
+            <div>
+              <h2 class="panel-title">Returning-User Access</h2>
+              <p class="panel-subtitle">Returning users request access; approving emails them a limited-use access code.</p>
+            </div>
+            <div class="panel-header-actions">
+              <button id="btn-toggle-access" type="button" class="btn-sm-secondary">Turn on</button>
+              <button id="btn-refresh-access" type="button" class="btn-sm-secondary">Refresh</button>
+            </div>
+          </div>
+
+          <div class="activity-summary-ribbon" aria-live="polite">
+            <span class="summary-metric">Approval flow: <strong id="access-enabled-state">—</strong></span>
+            <span class="summary-sep" aria-hidden="true">·</span>
+            <span class="summary-metric"><strong id="access-pending-count">0</strong> pending</span>
+            <span class="summary-sep" aria-hidden="true">·</span>
+            <span class="summary-metric">New codes: <strong id="access-defaults">—</strong></span>
+          </div>
+
+          <div class="activity-table-container" role="region" tabindex="0" aria-label="Access requests (scrollable)">
+            <table class="activity-table access-table">
+              <caption class="sr-only">Access requests</caption>
+              <thead>
+                <tr>
+                  <th scope="col">Email</th>
+                  <th scope="col">Status</th>
+                  <th scope="col">Requested</th>
+                  <th scope="col" class="num">Scans used</th>
+                  <th scope="col">Expires</th>
+                  <th scope="col">Actions</th>
+                </tr>
+              </thead>
+              <tbody id="access-tbody"></tbody>
+            </table>
+            <div id="access-state-message" class="activity-state-message hidden" role="status"></div>
+          </div>
+
+          <p class="pii-notice">
+            🔒 Access codes are only shown in the user's approval email; the server stores a hash, so a lost code can't be recovered — revoke it and approve a new request instead.
           </p>
         </section>
 

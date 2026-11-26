@@ -979,3 +979,10 @@ th[aria-sort="none"] .th-sort-btn::after {
     scroll-behavior: auto !important;
   }
 }
+
+/* Access tab table: plain headers (no sort buttons), so pad the cells directly */
+.access-table thead th {
+  padding: 12px 14px;
+  text-align: left;
+}
+.access-table thead th.num { text-align: right; }
