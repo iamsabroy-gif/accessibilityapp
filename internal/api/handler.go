@@ -797,7 +797,22 @@ func (h *Handler) CaptureLead(w http.ResponseWriter, r *http.Request) {
 		_ = h.LeadNotifier.Notify(r.Context(), rec)
 	}
 
-	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+	resp := map[string]interface{}{"ok": true}
+	// First-time users get a small number of free scans (one trial per email);
+	// after that they go through owner approval.
+	if config.GetAccessApprovalEnabled() && h.Access != nil {
+		code, created, err := h.Access.CreateTrial(req.Email, config.GetAccessTrialScans())
+		switch {
+		case err != nil:
+			h.Logger.Error("failed to create trial access", zap.Error(err))
+		case created:
+			resp["trial_code"] = code
+			resp["trial_scans"] = config.GetAccessTrialScans()
+		default:
+			resp["trial_used"] = true
+		}
+	}
+	writeJSON(w, http.StatusOK, resp)
 }
 
 // CaptureVisitReq represents request body for recording a return visit.

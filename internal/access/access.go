@@ -32,6 +32,9 @@ const (
 	StatusApproved = "approved"
 	StatusDenied   = "denied"
 	StatusRevoked  = "revoked"
+
+	// KindTrial marks the free scans every new user gets at registration.
+	KindTrial = "trial"
 )
 
 // Errors returned when a code cannot be used.
@@ -50,6 +53,7 @@ type Request struct {
 	ID          string `json:"id"`
 	Email       string `json:"email"`
 	Status      string `json:"status"`
+	Kind        string `json:"kind,omitempty"` // "trial" or "" (owner-approved)
 	RequestedAt string `json:"requested_at"`
 	DecidedAt   string `json:"decided_at,omitempty"`
 	// ReviewKeyHash guards the one-click review link sent to the owner.
@@ -190,6 +194,41 @@ func (s *Store) Create(email string) (req *Request, reviewKey string, created bo
 		return nil, "", false, err
 	}
 	return copyOf(r), reviewKey, true, nil
+}
+
+// CreateTrial issues the one-time free-scan code for a newly registered email.
+// Each email gets one trial ever; if it already had one, code is empty and
+// created is false.
+func (s *Store) CreateTrial(email string, scans int) (code string, created bool, err error) {
+	if scans <= 0 {
+		return "", false, fmt.Errorf("trial scans must be positive")
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	email = normEmail(email)
+	for _, r := range s.reqs {
+		if r.Email == email && r.Kind == KindTrial {
+			return "", false, nil
+		}
+	}
+	code = "AS-" + randomToken(18)
+	now := s.now().UTC().Format(time.RFC3339)
+	r := &Request{
+		ID:          randomToken(9),
+		Email:       email,
+		Kind:        KindTrial,
+		Status:      StatusApproved,
+		RequestedAt: now,
+		DecidedAt:   now,
+		CodeHash:    hash(code),
+		MaxScans:    scans,
+	}
+	s.reqs[r.ID] = r
+	if err := s.save(); err != nil {
+		delete(s.reqs, r.ID)
+		return "", false, err
+	}
+	return code, true, nil
 }
 
 // Get returns a copy of the request with the given ID.

@@ -1143,6 +1143,7 @@ if (typeof module !== 'undefined' && module.exports) {
       $('access-enabled-state').textContent = accessEnabled ? 'On' : 'Off';
       $('btn-toggle-access').textContent = accessEnabled ? 'Turn off' : 'Turn on';
       $('access-defaults').textContent = `${data.default_scans} scans` + (data.ttl_days > 0 ? `, ${data.ttl_days} days` : ', no expiry');
+      $('access-trial').textContent = `${data.trial_scans} scans`;
       const reqs = data.requests || [];
       $('access-pending-count').textContent = String(reqs.filter(r => r.status === 'pending').length);
 
@@ -1150,7 +1151,7 @@ if (typeof module !== 'undefined' && module.exports) {
       reqs.forEach(r => {
         const tr = document.createElement('tr');
         tr.appendChild(accessCell(r.email, 'email-cell'));
-        tr.appendChild(accessCell(r.status));
+        tr.appendChild(accessCell(r.kind === 'trial' ? (r.status === 'approved' ? 'free trial' : `free trial (${r.status})`) : r.status));
         tr.appendChild(accessCell(formatDateTime(r.requested_at)));
         tr.appendChild(accessCell(r.status === 'approved' || r.status === 'revoked' ? `${r.used_scans} / ${r.max_scans}` : '—', 'num'));
         tr.appendChild(accessCell(r.expires_at ? formatDateTime(r.expires_at) : '—'));

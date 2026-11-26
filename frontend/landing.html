@@ -1281,10 +1281,12 @@
       }
       return data;
     })
-    .then(() => {
+    .then((data) => {
       localStorage.setItem(REGISTERED_KEY, '1');
       sessionStorage.setItem(REGISTERED_KEY, '1');
       localStorage.setItem('accessscan_user_email', email);
+      // Free-scan code for first-time users; the app uses it for this session.
+      if (data && data.trial_code) sessionStorage.setItem('accessscan_trial_code', data.trial_code);
       closeModal();
       executePendingAction();
     })

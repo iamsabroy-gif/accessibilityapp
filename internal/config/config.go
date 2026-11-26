@@ -53,6 +53,7 @@ type Config struct {
 	AccessApprovalEnabled bool
 	AccessStorePath       string
 	AccessDefaultScans    int    // scans included in a newly approved code
+	AccessTrialScans      int    // free scans for a first-time user
 	AccessCodeTTLDays     int    // days an approved code stays valid (0 = no expiry)
 	PublicBaseURL         string // e.g. https://accessscan.example.com, used in email links
 }
@@ -386,6 +387,16 @@ func GetAccessDefaultScans() int {
 	return global.AccessDefaultScans
 }
 
+// GetAccessTrialScans returns the free scans a first-time user gets (default 5).
+func GetAccessTrialScans() int {
+	mu.RLock()
+	defer mu.RUnlock()
+	if global == nil || global.AccessTrialScans <= 0 {
+		return 5
+	}
+	return global.AccessTrialScans
+}
+
 // GetAccessCodeTTLDays returns how many days an approved code stays valid (0 = forever).
 func GetAccessCodeTTLDays() int {
 	mu.RLock()
@@ -468,6 +479,7 @@ func Load() *Config {
 		AccessApprovalEnabled: getEnvBool("ACCESS_APPROVAL_ENABLED", false),
 		AccessStorePath:       getEnv("ACCESS_STORE_PATH", "data/access.json"),
 		AccessDefaultScans:    getEnvInt("ACCESS_DEFAULT_SCANS", 20),
+		AccessTrialScans:      getEnvInt("ACCESS_TRIAL_SCANS", 5),
 		AccessCodeTTLDays:     getEnvInt("ACCESS_CODE_TTL_DAYS", 30),
 		PublicBaseURL:         getEnv("PUBLIC_BASE_URL", ""),
 	}

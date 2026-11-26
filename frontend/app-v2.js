@@ -13,7 +13,8 @@ const DEFAULT_API_BASE  = 'https://www.accessscan.in';
 const LS_KEY_TOKEN      = 'wacs_token';
 const LS_KEY_TOKEN_EXP  = 'wacs_token_exp';
 const LS_KEY_TOKEN_KIND = 'wacs_token_kind';        // 'guest' or 'access'
-const LS_KEY_ACCESS_CODE = 'accessscan_access_code'; // approved code for returning users
+const LS_KEY_ACCESS_CODE = 'accessscan_access_code'; // owner-approved code (kept across visits)
+const SS_KEY_TRIAL_CODE  = 'accessscan_trial_code';  // free-scan code from registration (this session only)
 const LS_KEY_SCAN_MODE   = 'wacs_scan_mode'; // 'parallel' or 'serial'
 
 // Token refresh buffer — refresh when less than this time remains (ms)
@@ -2176,8 +2177,23 @@ function closeAppRegisterModal() {
 // server has access approval turned on, returning users need an access code
 // that the owner approves; the code is emailed to them and limits their scans.
 
+// The approved code wins; otherwise the free-trial code from registration.
 function getAccessCode() {
-  try { return localStorage.getItem(LS_KEY_ACCESS_CODE) || ''; } catch (_) { return ''; }
+  try {
+    return localStorage.getItem(LS_KEY_ACCESS_CODE) || sessionStorage.getItem(SS_KEY_TRIAL_CODE) || '';
+  } catch (_) { return ''; }
+}
+
+function usingTrialCode() {
+  try { return !localStorage.getItem(LS_KEY_ACCESS_CODE) && !!sessionStorage.getItem(SS_KEY_TRIAL_CODE); } catch (_) { return false; }
+}
+
+// Forget whichever code is in use (see getAccessCode).
+function forgetAccessCode() {
+  try {
+    if (localStorage.getItem(LS_KEY_ACCESS_CODE)) localStorage.removeItem(LS_KEY_ACCESS_CODE);
+    else sessionStorage.removeItem(SS_KEY_TRIAL_CODE);
+  } catch (_) {}
 }
 
 function clearAccessToken() {
@@ -2187,19 +2203,23 @@ function clearAccessToken() {
   state.token = null;
 }
 
-function isReturningUser() {
-  return localStorage.getItem('accessscan_registered') === '1' && sessionStorage.getItem('accessscan_registered') !== '1';
-}
-
+// With approval on, every registered user scans with a code: the free trial
+// code from registration (first visit only), or an owner-approved one.
 function needsAccessCode() {
-  return state.accessApprovalEnabled && isReturningUser() && !getAccessCode();
+  return state.accessApprovalEnabled && isUserRegistered() && !getAccessCode();
 }
 
 function isAccessError(res, data) {
   return res.status === 403 && data && typeof data.code === 'string' && data.code.startsWith('access_');
 }
 
+const TRIAL_MESSAGES = {
+  access_exhausted: "You've used your free scans. Request access below to keep scanning.",
+  trial_used:       "You've already used the free scans for this email. Request access below to keep scanning.",
+};
+
 const ACCESS_MESSAGES = {
+  access_required:  'Enter your access code, or request access below.',
   access_exhausted: 'Your access code has no scans left. Request access again to get a new one.',
   access_expired:   'Your access code has expired. Request access again to get a new one.',
   access_revoked:   'Your access code is no longer active. Request access again if you need it.',
@@ -2209,7 +2229,8 @@ const ACCESS_MESSAGES = {
 function showAccessRemaining(remaining) {
   const note = $('access-remaining-note');
   if (!note || typeof remaining !== 'number') return;
-  note.textContent = `Access code active: ${remaining} scan${remaining === 1 ? '' : 's'} left.`;
+  const label = usingTrialCode() ? 'Free trial' : 'Access code active';
+  note.textContent = `${label}: ${remaining} scan${remaining === 1 ? '' : 's'} left.`;
   note.hidden = false;
 }
 
@@ -2231,11 +2252,13 @@ async function refreshAccessRemaining() {
 
 // The stored code can no longer be used: forget it and ask again.
 function handleAccessDenied(data, retry) {
-  try { localStorage.removeItem(LS_KEY_ACCESS_CODE); } catch (_) {}
+  const code = data && data.code;
+  const msg = (usingTrialCode() && TRIAL_MESSAGES[code]) || ACCESS_MESSAGES[code] || (data && data.error) || '';
+  forgetAccessCode();
   clearAccessToken();
   const note = $('access-remaining-note');
   if (note) note.hidden = true;
-  openAccessModal(retry, ACCESS_MESSAGES[data && data.code] || (data && data.error) || '');
+  openAccessModal(retry, msg);
 }
 
 let pendingAccessCallback = null;
@@ -2451,10 +2474,17 @@ document.addEventListener('DOMContentLoaded', () => {
       localStorage.setItem('accessscan_registered', '1');
       sessionStorage.setItem('accessscan_registered', '1');
       localStorage.setItem('accessscan_user_email', email);
+      if (data.trial_code) {
+        sessionStorage.setItem(SS_KEY_TRIAL_CODE, data.trial_code);
+        clearAccessToken();
+      }
       closeAppRegisterModal();
-      if (typeof pendingScanCallback === 'function') {
-        const cb = pendingScanCallback;
-        pendingScanCallback = null;
+      const cb = typeof pendingScanCallback === 'function' ? pendingScanCallback : null;
+      pendingScanCallback = null;
+      await state.infoReady;
+      if (needsAccessCode()) {
+        openAccessModal(cb, data.trial_used ? TRIAL_MESSAGES.trial_used : ACCESS_MESSAGES.access_required);
+      } else if (cb) {
         cb();
       }
     } catch (err) {

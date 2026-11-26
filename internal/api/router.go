@@ -51,8 +51,8 @@ func NewRouter(h *Handler, logger *zap.Logger) *chi.Mux {
 			r.Post("/access/session", h.AccessSession) // access code → scan token
 			r.Post("/access/review", h.DecideAccess)   // owner approves/denies
 			// Scan routes count scans made with an access-code token (see access.go).
-			r.Post("/scan", h.meteredAuth(h.Scan))
-			r.Post("/crawl", h.meteredAuth(h.StartCrawl))
+			r.Post("/scan", h.appMeteredAuth(h.Scan))
+			r.Post("/crawl", h.appMeteredAuth(h.StartCrawl))
 			r.Post("/scan/client", h.meteredAuth(h.ScanClient))
 			r.Post("/score", jwtAuthMiddleware(h.ScoreOnly))
 			for name := range reportSpecs {

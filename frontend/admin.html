@@ -483,7 +483,7 @@
           <div class="panel-header">
             <div>
               <h2 class="panel-title">Returning-User Access</h2>
-              <p class="panel-subtitle">Returning users request access; approving emails them a limited-use access code.</p>
+              <p class="panel-subtitle">First-time users get a few free scans; after that they request access, and approving emails them a limited-use access code.</p>
             </div>
             <div class="panel-header-actions">
               <button id="btn-toggle-access" type="button" class="btn-sm-secondary">Turn on</button>
@@ -497,6 +497,8 @@
             <span class="summary-metric"><strong id="access-pending-count">0</strong> pending</span>
             <span class="summary-sep" aria-hidden="true">·</span>
             <span class="summary-metric">New codes: <strong id="access-defaults">—</strong></span>
+            <span class="summary-sep" aria-hidden="true">·</span>
+            <span class="summary-metric">First-time users: <strong id="access-trial">—</strong> free</span>
           </div>
 
           <div class="activity-table-container" role="region" tabindex="0" aria-label="Access requests (scrollable)">

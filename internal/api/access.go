@@ -30,6 +30,8 @@ import (
 
 const accessSubjectPrefix = "access:"
 
+var errAccessRequired = errors.New("an access code is required to scan")
+
 // accessError codes returned to the client so it can show the right message.
 func accessErrorCode(err error) string {
 	switch {
@@ -39,6 +41,8 @@ func accessErrorCode(err error) string {
 		return "access_expired"
 	case errors.Is(err, access.ErrRevoked):
 		return "access_revoked"
+	case errors.Is(err, errAccessRequired):
+		return "access_required"
 	default:
 		return "access_invalid"
 	}
@@ -158,12 +162,27 @@ func (h *Handler) AccessSession(w http.ResponseWriter, r *http.Request) {
 // from an access code, refuses the request when the code is used up and uses
 // one scan when the request succeeds. Guest tokens pass through unchanged.
 func (h *Handler) meteredAuth(next http.HandlerFunc) http.HandlerFunc {
+	return h.metered(next, false)
+}
+
+// appMeteredAuth is meteredAuth for the web app's scan routes: while access
+// approval is on, guest tokens are refused there, so every app scan is counted
+// against a trial or approved code. (The extension's /scan/client stays open.)
+func (h *Handler) appMeteredAuth(next http.HandlerFunc) http.HandlerFunc {
+	return h.metered(next, true)
+}
+
+func (h *Handler) metered(next http.HandlerFunc, requireCode bool) http.HandlerFunc {
 	return jwtAuthMiddleware(func(w http.ResponseWriter, r *http.Request) {
 		claims := &jwt.StandardClaims{}
 		tok := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
 		// Signature already verified by jwtAuthMiddleware; only the subject is needed.
 		if _, _, err := new(jwt.Parser).ParseUnverified(tok, claims); err != nil ||
 			!strings.HasPrefix(claims.Subject, accessSubjectPrefix) {
+			if requireCode && config.GetAccessApprovalEnabled() && claims.Subject != "admin" {
+				writeAccessError(w, errAccessRequired)
+				return
+			}
 			next(w, r)
 			return
 		}
@@ -326,6 +345,7 @@ type accessRow struct {
 	ID          string `json:"id"`
 	Email       string `json:"email"`
 	Status      string `json:"status"`
+	Kind        string `json:"kind,omitempty"`
 	RequestedAt string `json:"requested_at"`
 	DecidedAt   string `json:"decided_at,omitempty"`
 	MaxScans    int    `json:"max_scans"`
@@ -339,12 +359,13 @@ func (h *Handler) ListAccess(w http.ResponseWriter, r *http.Request) {
 	rows := []accessRow{}
 	if h.Access != nil {
 		for _, q := range h.Access.List() {
-			rows = append(rows, accessRow{q.ID, q.Email, q.Status, q.RequestedAt, q.DecidedAt, q.MaxScans, q.UsedScans, q.ExpiresAt, q.LastUsed})
+			rows = append(rows, accessRow{q.ID, q.Email, q.Status, q.Kind, q.RequestedAt, q.DecidedAt, q.MaxScans, q.UsedScans, q.ExpiresAt, q.LastUsed})
 		}
 	}
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"enabled":       config.GetAccessApprovalEnabled(),
 		"default_scans": config.GetAccessDefaultScans(),
+		"trial_scans":   config.GetAccessTrialScans(),
 		"ttl_days":      config.GetAccessCodeTTLDays(),
 		"requests":      rows,
 	})
@@ -371,5 +392,5 @@ func (h *Handler) AdminDecideAccess(w http.ResponseWriter, r *http.Request) {
 		writeError(w, status, err.Error(), "")
 		return
 	}
-	writeJSON(w, http.StatusOK, accessRow{rec.ID, rec.Email, rec.Status, rec.RequestedAt, rec.DecidedAt, rec.MaxScans, rec.UsedScans, rec.ExpiresAt, rec.LastUsed})
+	writeJSON(w, http.StatusOK, accessRow{rec.ID, rec.Email, rec.Status, rec.Kind, rec.RequestedAt, rec.DecidedAt, rec.MaxScans, rec.UsedScans, rec.ExpiresAt, rec.LastUsed})
 }

@@ -16,6 +16,7 @@ import (
 
 	"github.com/webaccessibility/server/internal/access"
 	"github.com/webaccessibility/server/internal/config"
+	"github.com/webaccessibility/server/internal/leads"
 	"github.com/webaccessibility/server/internal/models"
 	"go.uber.org/zap"
 )
@@ -194,5 +195,63 @@ func TestAccessDisabled(t *testing.T) {
 	router := NewRouter(&Handler{Logger: zap.NewNop(), Access: store}, zap.NewNop())
 	if w := postJSON(t, router, "/api/v1/access/request", map[string]string{"email": "a@b.co"}, ""); w.Code != 404 {
 		t.Fatalf("expected 404 when disabled, got %d", w.Code)
+	}
+}
+
+func TestTrialScansForFirstTimeUsers(t *testing.T) {
+	t.Setenv("FRONTEND_DIR", "../../frontend")
+	config.InitGlobal(&config.Config{
+		JWTSecret:             "test-secret",
+		AccessApprovalEnabled: true,
+		AccessTrialScans:      5,
+		LeadCaptureEnabled:    true,
+		MaxConcurrentScans:    2,
+		AllowPrivateScans:     true,
+	})
+	defer config.InitGlobal(&config.Config{})
+
+	dir := t.TempDir()
+	store, _ := access.NewStore(filepath.Join(dir, "access.json"))
+	h := &Handler{Logger: zap.NewNop(), Access: store, LeadStore: leads.NewStore(filepath.Join(dir, "leads.jsonl")),
+		Scanner: stubScanner{}, ScanTimeout: 5 * time.Second, Results: NewResultStore("")}
+	router := NewRouter(h, zap.NewNop())
+
+	// A guest token can't scan in the app while approval is on.
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, httptest.NewRequest("GET", "/api/v1/session", nil))
+	var guest struct{ Token string }
+	_ = json.Unmarshal(w.Body.Bytes(), &guest)
+	if w := postJSON(t, router, "/api/v1/scan", map[string]string{"url": "http://127.0.0.1/"}, guest.Token); w.Code != http.StatusForbidden || !strings.Contains(w.Body.String(), "access_required") {
+		t.Fatalf("guest scan: %d %s", w.Code, w.Body)
+	}
+
+	// Registering returns a 5-scan trial code.
+	lead := map[string]interface{}{"email": "new@example.com", "source": "app_scan", "consent": true}
+	w = postJSON(t, router, "/api/v1/leads", lead, "")
+	var reg struct {
+		TrialCode  string `json:"trial_code"`
+		TrialScans int    `json:"trial_scans"`
+	}
+	_ = json.Unmarshal(w.Body.Bytes(), &reg)
+	if w.Code != 200 || reg.TrialCode == "" || reg.TrialScans != 5 {
+		t.Fatalf("register: %d %s", w.Code, w.Body)
+	}
+
+	w = postJSON(t, router, "/api/v1/access/session", map[string]string{"code": reg.TrialCode}, "")
+	var sess struct{ Token string }
+	_ = json.Unmarshal(w.Body.Bytes(), &sess)
+	for i := 1; i <= 5; i++ {
+		if w := postJSON(t, router, "/api/v1/scan", map[string]string{"url": "http://127.0.0.1/"}, sess.Token); w.Code != 200 {
+			t.Fatalf("trial scan %d: %d %s", i, w.Code, w.Body)
+		}
+	}
+	if w := postJSON(t, router, "/api/v1/scan", map[string]string{"url": "http://127.0.0.1/"}, sess.Token); w.Code != http.StatusForbidden || !strings.Contains(w.Body.String(), "access_exhausted") {
+		t.Fatalf("6th scan: %d %s", w.Code, w.Body)
+	}
+
+	// Registering the same email again gives no new trial.
+	w = postJSON(t, router, "/api/v1/leads", map[string]interface{}{"email": "NEW@example.com", "source": "app_scan", "consent": true}, "")
+	if strings.Contains(w.Body.String(), "trial_code") || !strings.Contains(w.Body.String(), "trial_used") {
+		t.Fatalf("re-register: %s", w.Body)
 	}
 }
