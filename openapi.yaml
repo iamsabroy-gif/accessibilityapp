@@ -444,6 +444,20 @@ paths:
           $ref: "#/components/responses/BadRequest"
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: |
+            No scans left. While access approval is on, a guest token gets 5 free extension scans per
+            client IP (lifetime), with code `free_scans_used` once they are gone. A token from
+            POST /access/session is counted against its access code instead (codes `access_exhausted`,
+            `access_expired`, `access_revoked`, `access_invalid`). A 200 response carries
+            `scans_remaining` whenever a limit applies.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error: { type: string }
+                  code: { type: string }
         "429":
           $ref: "#/components/responses/TooManyRequests"
         "500":
@@ -1351,7 +1365,7 @@ components:
             error: "scanning private/internal addresses is not allowed"
 
     TooManyRequests:
-      description: Rate limit exceeded (10 requests per minute per IP).
+      description: Rate limit exceeded (60 requests per minute per IP, shared by the web app and the browser extension). A Retry-After header gives the wait in seconds.
       content:
         application/json:
           schema:

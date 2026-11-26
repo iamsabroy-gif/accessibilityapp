@@ -56,7 +56,13 @@ func corsMiddleware(next http.Handler) http.Handler {
 // The key is the client IP as reported by the reverse proxy (X-Forwarded-For),
 // because behind a proxy every request shares the proxy's remote address.
 func rateLimitMiddleware() func(http.Handler) http.Handler {
-	return httprate.Limit(60, time.Minute, httprate.WithKeyFuncs(
-		func(r *http.Request) (string, error) { return getClientIP(r), nil },
-	))
+	return httprate.Limit(60, time.Minute,
+		httprate.WithKeyFuncs(func(r *http.Request) (string, error) { return getClientIP(r), nil }),
+		// JSON body (per openapi) so the web app and the extension can show the message.
+		// httprate has already set the Retry-After header at this point.
+		httprate.WithLimitHandler(func(w http.ResponseWriter, r *http.Request) {
+			writeError(w, http.StatusTooManyRequests, "too many requests",
+				"rate limit is 60 requests per minute per IP; retry after "+w.Header().Get("Retry-After")+" seconds")
+		}),
+	)
 }

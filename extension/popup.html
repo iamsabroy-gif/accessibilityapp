@@ -255,6 +255,39 @@
     .report-link.hidden {
       display: none;
     }
+    .access-panel h2 {
+      font-size: 14px;
+      margin: 0 0 8px;
+    }
+    .access-panel p {
+      font-size: 12px;
+      color: var(--text-secondary);
+      margin: 0 0 10px;
+    }
+    .access-panel hr {
+      border: none;
+      border-top: 1px solid var(--border-color);
+      margin: 12px 0;
+    }
+    .link-btn {
+      background: none;
+      border: none;
+      color: #a5b4fc;
+      font-size: 12px;
+      text-decoration: underline;
+      cursor: pointer;
+      padding: 4px 0;
+      margin-top: 8px;
+    }
+    .small-btn {
+      padding: 6px 12px;
+      font-size: 12px;
+    }
+    .access-status, .scans-left {
+      font-size: 12px;
+      color: var(--text-secondary);
+      margin: 8px 0 0;
+    }
   </style>
 </head>
 <body>
@@ -279,7 +312,31 @@
     <span id="btnText">Scan This Page</span>
   </button>
 
-  <div id="errorBox" class="error-box"></div>
+  <div id="errorBox" class="error-box" role="alert"></div>
+  <p id="scansLeft" class="scans-left" role="status"></p>
+  <button id="toggleAccess" type="button" class="link-btn" aria-expanded="false" aria-controls="accessPanel">Need more scans or have an access code?</button>
+
+  <div id="accessPanel" class="config-panel access-panel">
+    <h2>Request more scans</h2>
+    <p>Send a request. Once it is approved, you will get an access code by email.</p>
+    <form id="accessForm">
+      <div class="field-group">
+        <label for="accessEmail">Email</label>
+        <input type="email" id="accessEmail" autocomplete="email" required>
+      </div>
+      <button type="submit" id="accessSubmit" class="btn btn-primary small-btn">Request access</button>
+    </form>
+    <p id="accessStatus" class="access-status" role="status"></p>
+    <hr>
+    <form id="codeForm">
+      <div class="field-group">
+        <label for="accessCode">Have an access code?</label>
+        <input type="text" id="accessCode" autocomplete="off" spellcheck="false">
+      </div>
+      <button type="submit" class="btn btn-primary small-btn">Save access code</button>
+    </form>
+    <p id="codeStatus" class="access-status" role="status"></p>
+  </div>
 
   <div id="statusPanel" class="status-panel">
     <div class="score-card">

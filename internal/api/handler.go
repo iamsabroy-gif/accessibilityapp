@@ -51,6 +51,11 @@ type Handler struct {
 	Results     *ResultStore
 	resultsOnce sync.Once
 
+	// ExtQuota caps free extension scans (POST /scan/client) per client IP for
+	// guest tokens. Created in memory on first use if nil.
+	ExtQuota  *ExtQuota
+	quotaOnce sync.Once
+
 	// crawls tracks server-side multi-page scans (see crawl.go).
 	crawls crawlStore
 }
@@ -174,6 +179,11 @@ func (h *Handler) ScanClient(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	remaining, ok := h.extensionScanAllowance(w, r)
+	if !ok {
+		return
+	}
+
 	r.Header.Set("X-Scan-URL", raw.URL)
 	h.Logger.Info("ingesting client scan result", zap.String("url", raw.URL), zap.Int("violations", len(raw.Violations)))
 
@@ -187,11 +197,13 @@ func (h *Handler) ScanClient(w http.ResponseWriter, r *http.Request) {
 
 	// Wrap in envelope that includes report_id for the extension
 	envelope := struct {
-		ReportID string `json:"report_id"`
+		ReportID       string `json:"report_id"`
+		ScansRemaining *int   `json:"scans_remaining,omitempty"`
 		models.ScanResult
 	}{
-		ReportID:   reportID,
-		ScanResult: *result,
+		ReportID:       reportID,
+		ScansRemaining: remaining,
+		ScanResult:     *result,
 	}
 	writeJSON(w, http.StatusOK, envelope)
 }

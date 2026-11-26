@@ -97,6 +97,7 @@ func main() {
 		Access:       accessStore,
 		AccessMailer: accessMailer,
 		Results:      api.NewResultStore(resultDir),
+		ExtQuota:     api.NewExtQuota("data/extension_scans.json"),
 	}
 
 	// Router

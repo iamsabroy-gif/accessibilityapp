@@ -16,6 +16,16 @@ document.addEventListener('DOMContentLoaded', () => {
   const saveConfigBtn = document.getElementById('saveConfigBtn');
   const detailedReportLink = document.getElementById('detailedReportLink');
 
+  const scansLeft = document.getElementById('scansLeft');
+  const toggleAccess = document.getElementById('toggleAccess');
+  const accessPanel = document.getElementById('accessPanel');
+  const accessForm = document.getElementById('accessForm');
+  const accessSubmit = document.getElementById('accessSubmit');
+  const accessStatus = document.getElementById('accessStatus');
+  const codeForm = document.getElementById('codeForm');
+  const accessCode = document.getElementById('accessCode');
+  const codeStatus = document.getElementById('codeStatus');
+
   let currentApiBase = 'https://www.accessscan.in';
 
   // Load configuration
@@ -24,6 +34,42 @@ document.addEventListener('DOMContentLoaded', () => {
       apiBaseInput.value = response.apiBaseUrl;
       currentApiBase = response.apiBaseUrl;
     }
+    if (response && response.hasAccessCode) {
+      codeStatus.textContent = 'An access code is saved. Saving an empty code removes it.';
+    }
+  });
+
+  function setAccessOpen(open) {
+    accessPanel.classList.toggle('open', open);
+    toggleAccess.setAttribute('aria-expanded', open ? 'true' : 'false');
+  }
+
+  toggleAccess.addEventListener('click', () => {
+    setAccessOpen(!accessPanel.classList.contains('open'));
+  });
+
+  accessForm.addEventListener('submit', (e) => {
+    e.preventDefault();
+    accessSubmit.disabled = true;
+    accessStatus.textContent = 'Sending request…';
+    chrome.runtime.sendMessage({
+      action: 'REQUEST_ACCESS',
+      email: document.getElementById('accessEmail').value.trim()
+    }, (res) => {
+      accessSubmit.disabled = false;
+      accessStatus.textContent = res && res.success
+        ? 'Request sent. You will get an access code by email once it is approved.'
+        : `Could not send request: ${res ? res.error : 'unknown error'}`;
+    });
+  });
+
+  codeForm.addEventListener('submit', (e) => {
+    e.preventDefault();
+    const code = accessCode.value.trim();
+    chrome.runtime.sendMessage({ action: 'SET_ACCESS_CODE', code }, () => {
+      accessCode.value = '';
+      codeStatus.textContent = code ? 'Access code saved. Your next scans will use it.' : 'Access code removed.';
+    });
   });
 
   toggleConfig.addEventListener('click', () => {
@@ -46,6 +92,7 @@ document.addEventListener('DOMContentLoaded', () => {
     errorBox.textContent = '';
     statusPanel.classList.remove('active');
     detailedReportLink.classList.add('hidden');
+    scansLeft.textContent = '';
     scanBtn.disabled = true;
     btnSpinner.style.display = 'block';
     btnText.textContent = 'Scanning Page...';
@@ -62,6 +109,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
       if (!response || !response.success) {
         showError(response ? response.error : 'Unknown scan error');
+        if (response && response.code === 'quota') setAccessOpen(true);
         return;
       }
 
@@ -93,6 +141,10 @@ document.addEventListener('DOMContentLoaded', () => {
     incCount.textContent = summary.incomplete !== undefined ? summary.incomplete : (result.incomplete ? result.incomplete.length : 0);
 
     statusPanel.classList.add('active');
+
+    if (typeof result.scans_remaining === 'number') {
+      scansLeft.textContent = `${result.scans_remaining} scan${result.scans_remaining === 1 ? '' : 's'} left.`;
+    }
 
     // Show "View Detailed Report" link if report_id is available
     if (result.report_id) {

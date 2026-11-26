@@ -9,16 +9,38 @@ async function getApiBaseUrl() {
   return data.apiBaseUrl || DEFAULT_API_BASE;
 }
 
+// Error that makes the popup open the "request access / enter code" panel.
+function accessError(message) {
+  const err = new Error(message);
+  err.code = 'quota';
+  return err;
+}
+
+// Returns a scan token: from the saved access code if there is one (the server
+// counts each scan against the code), otherwise an anonymous guest token.
 async function ensureToken(apiBase) {
-  const data = await chrome.storage.local.get(['authToken', 'tokenExp']);
+  const data = await chrome.storage.local.get(['authToken', 'tokenExp', 'accessCode']);
   const now = Math.floor(Date.now() / 1000);
   if (data.authToken && data.tokenExp && (data.tokenExp - now > 60)) {
     return data.authToken;
   }
 
-  const res = await fetch(`${apiBase}/api/v1/session`, { method: 'GET' });
+  let res;
+  if (data.accessCode) {
+    res = await fetch(`${apiBase}/api/v1/access/session`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ code: data.accessCode })
+    });
+    if (res.status === 403) {
+      const body = await res.json().catch(() => ({}));
+      throw accessError(`Your access code cannot be used: ${body.error || 'invalid code'}. Request access again or enter a new code.`);
+    }
+  } else {
+    res = await fetch(`${apiBase}/api/v1/session`, { method: 'GET' });
+  }
   if (!res.ok) {
-    throw new Error(`Failed to obtain guest session token from server (${res.status})`);
+    throw new Error(`Failed to obtain a session token from server (${res.status})`);
   }
   const body = await res.json();
   const token = body.token;
@@ -216,15 +238,27 @@ async function scanTab(tab) {
     screenshot: screenshotB64
   };
 
+  const headers = {
+    'Content-Type': 'application/json',
+    'Authorization': `Bearer ${token}`
+  };
+
   const response = await fetch(`${apiBase}/api/v1/scan/client`, {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${token}`
-    },
+    headers,
     body: JSON.stringify(payload)
   });
 
+  if (response.status === 429) {
+    const wait = response.headers.get('Retry-After') || '60';
+    throw new Error(`Scan limit reached for this server. Please try again in ${wait} seconds.`);
+  }
+  if (response.status === 403) {
+    // Free scans used up (free_scans_used) or the access code is used up / expired / revoked (access_*).
+    const body = await response.json().catch(() => ({}));
+    await chrome.storage.local.remove(['authToken', 'tokenExp']);
+    throw accessError(body.error || 'No scans left. Request access below or enter an access code.');
+  }
   if (!response.ok) {
     const errBody = await response.json().catch(() => ({}));
     throw new Error(errBody.error || `Server responded with status ${response.status}`);
@@ -235,7 +269,41 @@ async function scanTab(tab) {
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.action === 'GET_CONFIG') {
-    getApiBaseUrl().then(url => sendResponse({ apiBaseUrl: url }));
+    Promise.all([getApiBaseUrl(), chrome.storage.local.get(['accessCode'])])
+      .then(([url, data]) => sendResponse({ apiBaseUrl: url, hasAccessCode: !!data.accessCode }));
+    return true;
+  }
+
+  if (message.action === 'SET_ACCESS_CODE') {
+    const code = (message.code || '').trim();
+    // Drop the cached scan token so the next scan uses (or stops using) the code.
+    chrome.storage.local.remove(['authToken', 'tokenExp'])
+      .then(() => (code ? chrome.storage.local.set({ accessCode: code }) : chrome.storage.local.remove('accessCode')))
+      .then(() => sendResponse({ success: true }));
+    return true;
+  }
+
+  if (message.action === 'REQUEST_ACCESS') {
+    (async () => {
+      try {
+        const apiBase = await getApiBaseUrl();
+        const res = await fetch(`${apiBase}/api/v1/access/request`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email: message.email })
+        });
+        if (res.status === 404) {
+          throw new Error('This server does not take access requests');
+        }
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({}));
+          throw new Error(body.error || `Server responded with status ${res.status}`);
+        }
+        sendResponse({ success: true });
+      } catch (err) {
+        sendResponse({ success: false, error: err.message || String(err) });
+      }
+    })();
     return true;
   }
 
@@ -253,7 +321,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         const scanResult = await scanTab(tab);
         sendResponse({ success: true, result: scanResult });
       } catch (err) {
-        sendResponse({ success: false, error: err.message || String(err) });
+        sendResponse({ success: false, error: err.message || String(err), code: err.code });
       }
     })();
     return true; // async response
