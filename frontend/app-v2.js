@@ -2208,6 +2208,10 @@ function updateHeaderSession() {
   if (signInBtn) {
     signInBtn.classList.toggle('hidden', loggedIn || !state.accessApprovalEnabled);
   }
+  const guestBanner = $('guest-signin-banner');
+  if (guestBanner) {
+    guestBanner.classList.toggle('hidden', loggedIn || !state.accessApprovalEnabled);
+  }
 }
 
 async function refreshAuthMe() {
@@ -2276,10 +2280,15 @@ function startResendCountdown() {
 function showLoginStep(step) {
   const step1 = $('app-register-form');
   const step2 = $('app-verify-form');
+  const pill1 = $('auth-step-pill-1');
+  const pill2 = $('auth-step-pill-2');
   if (!step1 || !step2) return;
   if (step === 2) {
     step1.classList.add('hidden');
     step2.classList.remove('hidden');
+    pill1?.classList.remove('active');
+    pill1?.classList.add('done');
+    pill2?.classList.add('active');
     const codeInput = $('app-login-code');
     if (codeInput) {
       codeInput.value = '';
@@ -2290,6 +2299,9 @@ function showLoginStep(step) {
     clearResendTimer();
     step2.classList.add('hidden');
     step1.classList.remove('hidden');
+    pill1?.classList.remove('done');
+    pill1?.classList.add('active');
+    pill2?.classList.remove('active');
     setTimeout(() => $('app-register-email')?.focus(), 50);
   }
 }
@@ -2666,8 +2678,13 @@ document.addEventListener('DOMContentLoaded', () => {
     pendingScanCallback = null;
     closeAppRegisterModal();
   });
+  $('app-register-close')?.addEventListener('click', () => {
+    pendingScanCallback = null;
+    closeAppRegisterModal();
+  });
 
   $('user-signin-btn')?.addEventListener('click', () => openAppRegisterModal());
+  $('guest-signin-cta')?.addEventListener('click', () => openAppRegisterModal());
   $('user-logout-btn')?.addEventListener('click', logoutUser);
 
   // ── Out-of-scans / request-more-scans modal ───────
