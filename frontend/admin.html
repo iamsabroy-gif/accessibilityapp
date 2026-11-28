@@ -482,8 +482,8 @@
         >
           <div class="panel-header">
             <div>
-              <h2 class="panel-title">Returning-User Access</h2>
-              <p class="panel-subtitle">First-time users get a few free scans; after that they request access, and approving emails them a limited-use access code.</p>
+              <h2 class="panel-title">User Accounts &amp; Access Requests</h2>
+              <p class="panel-subtitle">New users get a few free scans after signing in with email; when they run out they can request more scans, and approving adds scans to their account.</p>
             </div>
             <div class="panel-header-actions">
               <button id="btn-toggle-access" type="button" class="btn-sm-secondary">Turn on</button>
@@ -496,11 +496,12 @@
             <span class="summary-sep" aria-hidden="true">·</span>
             <span class="summary-metric"><strong id="access-pending-count">0</strong> pending</span>
             <span class="summary-sep" aria-hidden="true">·</span>
-            <span class="summary-metric">New codes: <strong id="access-defaults">—</strong></span>
+            <span class="summary-metric">Default grant: <strong id="access-defaults">—</strong></span>
             <span class="summary-sep" aria-hidden="true">·</span>
-            <span class="summary-metric">First-time users: <strong id="access-trial">—</strong> free</span>
+            <span class="summary-metric">New users: <strong id="access-trial">—</strong> free</span>
           </div>
 
+          <h3 class="access-section-heading">Pending &amp; Recent Requests</h3>
           <div class="activity-table-container" role="region" tabindex="0" aria-label="Access requests (scrollable)">
             <table class="activity-table access-table">
               <caption class="sr-only">Access requests</caption>
@@ -509,8 +510,7 @@
                   <th scope="col">Email</th>
                   <th scope="col">Status</th>
                   <th scope="col">Requested</th>
-                  <th scope="col" class="num">Scans used</th>
-                  <th scope="col">Expires</th>
+                  <th scope="col" class="num">Scans granted</th>
                   <th scope="col">Actions</th>
                 </tr>
               </thead>
@@ -519,9 +519,23 @@
             <div id="access-state-message" class="activity-state-message hidden" role="status"></div>
           </div>
 
-          <p class="pii-notice">
-            🔒 Access codes are only shown in the user's approval email; the server stores a hash, so a lost code can't be recovered — revoke it and approve a new request instead.
-          </p>
+          <h3 class="access-section-heading" style="margin-top:1.5rem;">Users</h3>
+          <div class="activity-table-container" role="region" tabindex="0" aria-label="Users (scrollable)">
+            <table class="activity-table access-table">
+              <caption class="sr-only">Users</caption>
+              <thead>
+                <tr>
+                  <th scope="col">Email</th>
+                  <th scope="col" class="num">Scans used / allowed</th>
+                  <th scope="col">Last scan</th>
+                  <th scope="col">Status</th>
+                  <th scope="col">Actions</th>
+                </tr>
+              </thead>
+              <tbody id="access-users-tbody"></tbody>
+            </table>
+            <div id="access-users-state-message" class="activity-state-message hidden" role="status"></div>
+          </div>
         </section>
 
         <!-- ──────────────────────────────────────────

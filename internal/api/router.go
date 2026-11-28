@@ -34,7 +34,10 @@ func NewRouter(h *Handler, logger *zap.Logger) *chi.Mux {
 		r.Get("/admin/activity", adminAuthMiddleware(h.GetActivity))
 		r.Get("/admin/access", adminAuthMiddleware(h.ListAccess))
 		r.Post("/admin/access/{id}/{action}", adminAuthMiddleware(h.AdminDecideAccess))
+		r.Post("/admin/users/{id}/block", adminAuthMiddleware(h.AdminBlockUser))
+		r.Post("/admin/users/{id}/unblock", adminAuthMiddleware(h.AdminUnblockUser))
 		r.Get("/access/review", h.ReviewAccess) // owner's emailed review link (guarded by its key)
+		r.Get("/auth/me", jwtAuthMiddleware(h.AuthMe))
 		r.Get("/coverage", h.CoverageReport)
 		r.Get("/crawl/{id}", h.GetCrawl)                  // public: progress of a multi-page scan (polled)
 		r.Post("/crawl/{id}/cancel", h.CancelCrawl)       // public: stop a multi-page scan
@@ -45,12 +48,14 @@ func NewRouter(h *Handler, logger *zap.Logger) *chi.Mux {
 		// Rate-limit the expensive scan/score endpoints & public lead capture
 		r.Group(func(r chi.Router) {
 			r.Use(rateLimitMiddleware())
-			r.Post("/leads", h.CaptureLead)            // public + rate-limited
-			r.Post("/visit", h.CaptureVisit)           // public + rate-limited
-			r.Post("/access/request", h.RequestAccess) // returning user asks for access
-			r.Post("/access/session", h.AccessSession) // access code → scan token
-			r.Post("/access/review", h.DecideAccess)   // owner approves/denies
-			// Scan routes count scans made with an access-code token (see access.go).
+			r.Post("/auth/code", h.AuthCode)                              // public + rate-limited
+			r.Post("/auth/verify", h.AuthVerify)                          // public + rate-limited
+			r.Post("/leads", h.CaptureLead)                               // public + rate-limited
+			r.Post("/visit", h.CaptureVisit)                              // public + rate-limited
+			r.Post("/access/request", jwtAuthMiddleware(h.RequestAccess)) // logged-in user asks for more scans
+			r.Post("/access/session", h.AccessSession)                    // legacy access code → scan token (kept until Phase 4)
+			r.Post("/access/review", h.DecideAccess)                      // owner approves/denies
+			// Scan routes count scans against user accounts (or legacy access codes).
 			r.Post("/scan", h.appMeteredAuth(h.Scan))
 			r.Post("/crawl", h.appMeteredAuth(h.StartCrawl))
 			r.Post("/scan/client", h.meteredAuth(h.ScanClient))

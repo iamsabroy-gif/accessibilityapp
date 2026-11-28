@@ -1135,6 +1135,8 @@ if (typeof module !== 'undefined' && module.exports) {
   async function loadAccess() {
     const tbody = $('access-tbody');
     const msg = $('access-state-message');
+    const usersTbody = $('access-users-tbody');
+    const usersMsg = $('access-users-state-message');
     try {
       const res = await adminFetch('/api/v1/admin/access');
       const data = await res.json();
@@ -1142,7 +1144,7 @@ if (typeof module !== 'undefined' && module.exports) {
       accessEnabled = data.enabled === true;
       $('access-enabled-state').textContent = accessEnabled ? 'On' : 'Off';
       $('btn-toggle-access').textContent = accessEnabled ? 'Turn off' : 'Turn on';
-      $('access-defaults').textContent = `${data.default_scans} scans` + (data.ttl_days > 0 ? `, ${data.ttl_days} days` : ', no expiry');
+      $('access-defaults').textContent = `${data.default_scans} scans`;
       $('access-trial').textContent = `${data.trial_scans} scans`;
       const reqs = data.requests || [];
       $('access-pending-count').textContent = String(reqs.filter(r => r.status === 'pending').length);
@@ -1151,10 +1153,9 @@ if (typeof module !== 'undefined' && module.exports) {
       reqs.forEach(r => {
         const tr = document.createElement('tr');
         tr.appendChild(accessCell(r.email, 'email-cell'));
-        tr.appendChild(accessCell(r.kind === 'trial' ? (r.status === 'approved' ? 'free trial' : `free trial (${r.status})`) : r.status));
+        tr.appendChild(accessCell(r.status));
         tr.appendChild(accessCell(formatDateTime(r.requested_at)));
-        tr.appendChild(accessCell(r.status === 'approved' || r.status === 'revoked' ? `${r.used_scans} / ${r.max_scans}` : '—', 'num'));
-        tr.appendChild(accessCell(r.expires_at ? formatDateTime(r.expires_at) : '—'));
+        tr.appendChild(accessCell(r.scans_granted ? String(r.scans_granted) : '—', 'num'));
         const actions = document.createElement('td');
         const addBtn = (label, action) => {
           const b = document.createElement('button');
@@ -1167,12 +1168,37 @@ if (typeof module !== 'undefined' && module.exports) {
           actions.appendChild(b);
         };
         if (r.status === 'pending') { addBtn('Approve', 'approve'); addBtn('Deny', 'deny'); }
-        if (r.status === 'approved') addBtn('Revoke', 'revoke');
         tr.appendChild(actions);
         tbody.appendChild(tr);
       });
       msg.textContent = reqs.length ? '' : 'No access requests yet.';
       msg.classList.toggle('hidden', reqs.length > 0);
+
+      if (usersTbody && usersMsg) {
+        const users = data.users || [];
+        usersTbody.textContent = '';
+        users.forEach(u => {
+          const tr = document.createElement('tr');
+          tr.appendChild(accessCell(u.email, 'email-cell'));
+          tr.appendChild(accessCell(`${u.scans_used ?? 0} / ${u.scans_allowed ?? 0}`, 'num'));
+          tr.appendChild(accessCell(u.last_scan_at ? formatDateTime(u.last_scan_at) : '—'));
+          tr.appendChild(accessCell(u.status || 'active'));
+          const actions = document.createElement('td');
+          const isBlocked = u.status === 'blocked';
+          const action = isBlocked ? 'unblock' : 'block';
+          const b = document.createElement('button');
+          b.type = 'button';
+          b.className = isBlocked ? 'btn-sm-primary' : 'btn-sm-secondary';
+          b.textContent = isBlocked ? 'Unblock' : 'Block';
+          b.setAttribute('aria-label', `${b.textContent} ${u.email}`);
+          b.addEventListener('click', () => toggleUserBlock(u, action));
+          actions.appendChild(b);
+          tr.appendChild(actions);
+          usersTbody.appendChild(tr);
+        });
+        usersMsg.textContent = users.length ? '' : 'No users yet.';
+        usersMsg.classList.toggle('hidden', users.length > 0);
+      }
     } catch (err) {
       if (err.message === 'Session expired') return;
       msg.textContent = err.message;
@@ -1183,12 +1209,12 @@ if (typeof module !== 'undefined' && module.exports) {
   async function decideAccess(r, action) {
     let body = {};
     if (action === 'approve') {
-      const input = window.prompt(`Approve ${r.email}?\nScans to allow:`, $('access-defaults').textContent.split(' ')[0]);
+      const input = window.prompt(`Approve ${r.email}?\nScans to add:`, $('access-defaults').textContent.split(' ')[0]);
       if (input === null) return;
       const n = parseInt(input, 10);
       if (!(n > 0)) { showToast('Enter a positive number of scans.', 'error'); return; }
-      body = { max_scans: n };
-    } else if (!window.confirm(`${action === 'deny' ? 'Deny' : 'Revoke'} access for ${r.email}?`)) {
+      body = { scans: n };
+    } else if (!window.confirm(`Deny access request for ${r.email}?`)) {
       return;
     }
     try {
@@ -1199,7 +1225,25 @@ if (typeof module !== 'undefined' && module.exports) {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Action failed');
-      showToast(action === 'approve' ? `Approved — access code emailed to ${r.email}.` : `${r.email}: ${data.status}.`, 'success');
+      showToast(action === 'approve' ? `Approved — added ${body.scans} scans to ${r.email}.` : `${r.email}: ${data.status}.`, 'success');
+      loadAccess();
+    } catch (err) {
+      if (err.message !== 'Session expired') showToast(err.message, 'error');
+    }
+  }
+
+  async function toggleUserBlock(u, action) {
+    const label = action === 'block' ? 'Block' : 'Unblock';
+    if (!window.confirm(`${label} ${u.email}?`)) return;
+    try {
+      const res = await adminFetch(`/api/v1/admin/users/${encodeURIComponent(u.id)}/${action}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Action failed');
+      showToast(`${u.email}: ${data.status || (action === 'block' ? 'blocked' : 'active')}.`, 'success');
       loadAccess();
     } catch (err) {
       if (err.message !== 'Session expired') showToast(err.message, 'error');

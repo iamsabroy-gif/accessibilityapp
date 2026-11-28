@@ -144,6 +144,31 @@ body::before {
   gap: 12px;
 }
 
+.user-session-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.82rem;
+  color: var(--text-secondary);
+}
+.user-session-bar.hidden { display: none; }
+.user-email-label {
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-primary);
+  font-weight: 500;
+}
+.user-scans-badge {
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: var(--bg-card-hover);
+  color: var(--text-secondary);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
 .topbar-menu-btn { border:0; background:transparent; color:var(--text-secondary); font:600 .84rem/1 inherit; cursor:pointer; padding:8px 12px; border-radius:var(--radius-sm); }
 .topbar-menu-btn:hover, .topbar-menu-btn:focus-visible { color:var(--text-primary); background:var(--bg-card-hover); }
 

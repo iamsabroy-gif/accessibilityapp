@@ -446,11 +446,13 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "403":
           description: |
-            No scans left. While access approval is on, a guest token gets 5 free extension scans per
-            client IP (lifetime), with code `free_scans_used` once they are gone. A token from
-            POST /access/session is counted against its access code instead (codes `access_exhausted`,
-            `access_expired`, `access_revoked`, `access_invalid`). A 200 response carries
-            `scans_remaining` whenever a limit applies.
+            Scan refused while access approval is on. Codes: `login_required` (guest or unknown token;
+            log in via /auth/code + /auth/verify), `scans_used_up` (account has no scans left; ask for
+            more via POST /access/request), `blocked` (account blocked by the owner). Legacy tokens from
+            POST /access/session use `access_exhausted`, `access_expired`, `access_revoked`,
+            `access_invalid`. A scan is reserved before it runs and refunded if it fails. A 200 response
+            carries `scans_remaining` whenever a limit applies. The same rules apply to /scan and /crawl
+            (one multi-page crawl counts as one scan).
           content:
             application/json:
               schema:
@@ -614,6 +616,223 @@ paths:
                 expires_in: 1200
         "500":
           $ref: "#/components/responses/InternalError"
+
+  # ── EMAIL-CODE LOGIN ───────────────────────────────────────────────────────
+  /auth/code:
+    post:
+      tags: [Auth]
+      summary: Email a 6-digit login code
+      description: |
+        Sends a one-time 6-digit code to the email (valid 10 minutes, 5 tries, single use; only an
+        HMAC of it is stored). Always answers `{"ok": true}` for a valid address, so it does not reveal
+        whether an account exists. At most 3 codes per email per hour (429 after that).
+      operationId: postAuthCode
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email]
+              properties:
+                email: { type: string, format: email }
+      responses:
+        "200":
+          description: Code sent (or silently skipped)
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "429":
+          description: Too many codes for this email, or the per-IP rate limit
+        "503":
+          description: Account database unavailable (`code`=`db_unavailable`)
+
+  /auth/verify:
+    post:
+      tags: [Auth]
+      summary: Exchange a login code for a session token
+      description: |
+        Checks the code, creates the account on first login (with the free trial scans,
+        ACCESS_TRIAL_SCANS, default 5) and returns a session JWT with subject `user:<id>`, valid
+        AUTH_SESSION_DAYS (default 30). At most 3 new accounts per IP per day.
+      operationId: postAuthVerify
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, code]
+              properties:
+                email: { type: string, format: email }
+                code: { type: string, example: "482910" }
+      responses:
+        "200":
+          description: Logged in
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  token: { type: string }
+                  expires_in: { type: integer, description: Seconds }
+                  email: { type: string }
+                  scans_left: { type: integer }
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          description: Wrong or expired code (`code`=`invalid_code`)
+        "403":
+          description: Account blocked (`code`=`blocked`)
+        "429":
+          description: Too many wrong tries (`code`=`too_many_attempts`) or too many new accounts from this IP
+        "503":
+          description: Account database unavailable (`code`=`db_unavailable`)
+
+  /auth/me:
+    get:
+      tags: [Auth]
+      summary: Current account and scans left
+      operationId: getAuthMe
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Logged-in account
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  email: { type: string }
+                  scans_left: { type: integer }
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "503":
+          description: Account database unavailable (`code`=`db_unavailable`)
+
+  # ── MORE SCANS / LEGACY ACCESS CODES ───────────────────────────────────────
+  /access/request:
+    post:
+      tags: [Auth]
+      summary: Ask the owner for more scans
+      description: |
+        Needs a logged-in (`user:`) token; the email comes from the account, so the body can be empty.
+        Emails the owner a one-click review link. A second request while one is pending creates nothing.
+        On approval the scans are added to the account and the user is emailed (no code).
+      operationId: postAccessRequest
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Request recorded (or already pending)
+        "403":
+          description: Not logged in (`login_required`) or blocked (`blocked`)
+        "404":
+          description: Access approval is switched off
+
+  /access/session:
+    post:
+      tags: [Auth]
+      summary: Legacy - exchange an old access code for a scan token
+      description: |
+        Kept only while old access codes are converted to accounts (migration Phase 4), then removed.
+        Each use is logged.
+      operationId: postAccessSession
+      deprecated: true
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [code]
+              properties:
+                code: { type: string }
+      responses:
+        "200":
+          description: Scan token for the code
+        "403":
+          description: Code invalid, used up, expired or revoked
+        "404":
+          description: Access approval is switched off
+
+  # ── ADMIN: ACCESS REQUESTS & ACCOUNTS ──────────────────────────────────────
+  /admin/access:
+    get:
+      tags: [Admin]
+      summary: Access requests, user accounts and access settings (admin)
+      operationId: getAdminAccess
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Requests (newest first), users and settings (`enabled`, `default_scans`, `trial_scans`)
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /admin/access/{id}/{action}:
+    post:
+      tags: [Admin]
+      summary: Approve or deny an access request (admin)
+      operationId: postAdminDecideAccess
+      security:
+        - BearerAuth: []
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+        - { name: action, in: path, required: true, schema: { type: string, enum: [approve, deny, revoke] }, description: "revoke disables a legacy access code" }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                scans: { type: integer, description: Scans to add on approve (default ACCESS_DEFAULT_SCANS) }
+      responses:
+        "200":
+          description: Decided
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          description: Request not found
+        "409":
+          description: Request already decided
+
+  /admin/users/{id}/block:
+    post:
+      tags: [Admin]
+      summary: Block an account (admin); its next scan is refused
+      operationId: postAdminBlockUser
+      security:
+        - BearerAuth: []
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: Updated account
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          description: Account not found
+
+  /admin/users/{id}/unblock:
+    post:
+      tags: [Admin]
+      summary: Unblock an account (admin)
+      operationId: postAdminUnblockUser
+      security:
+        - BearerAuth: []
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: Updated account
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          description: Account not found
 
   # ── ADMIN VERIFY ───────────────────────────────────────────────────────────
   /admin/activity:

@@ -56,6 +56,9 @@ type Config struct {
 	AccessTrialScans      int    // free scans for a first-time user
 	AccessCodeTTLDays     int    // days an approved code stays valid (0 = no expiry)
 	PublicBaseURL         string // e.g. https://accessscan.example.com, used in email links
+	MongoDBURI            string // MongoDB connection URI (empty = JSON file fallback)
+	MongoDBDB             string // MongoDB database name (default "accessscan")
+	AuthSessionDays       int    // days a user login session JWT stays valid (default 30)
 }
 
 // global holds the runtime configuration and is accessed concurrently.
@@ -417,6 +420,36 @@ func GetPublicBaseURL() string {
 	return strings.TrimRight(global.PublicBaseURL, "/")
 }
 
+// GetMongoDBURI returns the configured MongoDB connection URI.
+func GetMongoDBURI() string {
+	mu.RLock()
+	defer mu.RUnlock()
+	if global == nil {
+		return ""
+	}
+	return global.MongoDBURI
+}
+
+// GetMongoDBDB returns the configured MongoDB database name (default "accessscan").
+func GetMongoDBDB() string {
+	mu.RLock()
+	defer mu.RUnlock()
+	if global == nil || global.MongoDBDB == "" {
+		return "accessscan"
+	}
+	return global.MongoDBDB
+}
+
+// GetAuthSessionDays returns how many days a user login session JWT stays valid (default 30).
+func GetAuthSessionDays() int {
+	mu.RLock()
+	defer mu.RUnlock()
+	if global == nil || global.AuthSessionDays <= 0 {
+		return 30
+	}
+	return global.AuthSessionDays
+}
+
 // SetSecret updates the JWT secret at runtime.
 func SetSecret(newSecret string) {
 	mu.Lock()
@@ -482,6 +515,9 @@ func Load() *Config {
 		AccessTrialScans:      getEnvInt("ACCESS_TRIAL_SCANS", 5),
 		AccessCodeTTLDays:     getEnvInt("ACCESS_CODE_TTL_DAYS", 30),
 		PublicBaseURL:         getEnv("PUBLIC_BASE_URL", ""),
+		MongoDBURI:            getEnv("MONGODB_URI", ""),
+		MongoDBDB:             getEnv("MONGODB_DB", "accessscan"),
+		AuthSessionDays:       getEnvInt("AUTH_SESSION_DAYS", 30),
 	}
 }
 

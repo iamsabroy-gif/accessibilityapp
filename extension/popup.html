@@ -288,6 +288,58 @@
       color: var(--text-secondary);
       margin: 8px 0 0;
     }
+    .account-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      margin-bottom: 12px;
+      padding: 8px 10px;
+      background: var(--bg-secondary);
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      font-size: 12px;
+    }
+    .account-info {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      min-width: 0;
+    }
+    .account-email {
+      color: var(--text-primary);
+      font-weight: 600;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .account-scans {
+      color: var(--text-secondary);
+    }
+    .logout-btn {
+      background: none;
+      border: 1px solid var(--border-color);
+      color: var(--text-secondary);
+      border-radius: 6px;
+      padding: 4px 8px;
+      font-size: 11px;
+      cursor: pointer;
+      flex-shrink: 0;
+    }
+    .logout-btn:hover {
+      color: var(--text-primary);
+      border-color: var(--text-secondary);
+    }
+    .inline-actions {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      margin-top: 6px;
+    }
+    [hidden] {
+      display: none !important;
+    }
   </style>
 </head>
 <body>
@@ -296,7 +348,7 @@
       <div class="logo-icon">A</div>
       <span>Accessibility Scanner</span>
     </div>
-    <button id="toggleConfig" class="settings-btn" title="Settings">⚙️</button>
+    <button id="toggleConfig" type="button" class="settings-btn" title="Settings" aria-label="Settings" aria-expanded="false" aria-controls="configPanel">⚙️</button>
   </div>
 
   <div id="configPanel" class="config-panel">
@@ -304,38 +356,56 @@
       <label for="apiBaseInput">API Server URL</label>
       <input type="text" id="apiBaseInput" value="https://www.accessscan.in" placeholder="https://www.accessscan.in">
     </div>
-    <button id="saveConfigBtn" class="btn btn-primary" style="padding: 6px 12px; font-size: 12px;">Save Server URL</button>
+    <button id="saveConfigBtn" type="button" class="btn btn-primary" style="padding: 6px 12px; font-size: 12px;">Save Server URL</button>
   </div>
 
-  <button id="scanBtn" class="btn btn-primary">
+  <div id="accountBar" class="account-bar" hidden>
+    <div class="account-info">
+      <span id="accountEmail" class="account-email"></span>
+      <span id="accountScansLeft" class="account-scans" role="status"></span>
+    </div>
+    <button id="logoutBtn" type="button" class="logout-btn">Log out</button>
+  </div>
+
+  <button id="scanBtn" type="button" class="btn btn-primary">
     <div id="btnSpinner" class="spinner"></div>
     <span id="btnText">Scan This Page</span>
   </button>
 
   <div id="errorBox" class="error-box" role="alert"></div>
   <p id="scansLeft" class="scans-left" role="status"></p>
-  <button id="toggleAccess" type="button" class="link-btn" aria-expanded="false" aria-controls="accessPanel">Need more scans or have an access code?</button>
+  <button id="toggleLogin" type="button" class="link-btn" aria-expanded="false" aria-controls="loginPanel">Sign in with email</button>
 
-  <div id="accessPanel" class="config-panel access-panel">
+  <div id="loginPanel" class="config-panel access-panel">
+    <h2>Sign in</h2>
+    <p id="loginSubtitle">Enter your email to receive a 6-digit login code.</p>
+    <div id="loginError" class="error-box" role="alert"></div>
+    <form id="loginEmailForm">
+      <div class="field-group">
+        <label for="loginEmail">Email</label>
+        <input type="email" id="loginEmail" autocomplete="email" required>
+      </div>
+      <button type="submit" id="sendCodeBtn" class="btn btn-primary small-btn">Send code</button>
+    </form>
+    <form id="loginCodeForm" hidden>
+      <div class="field-group">
+        <label for="loginCode">6-digit code</label>
+        <input type="text" id="loginCode" inputmode="numeric" autocomplete="one-time-code" maxlength="6" pattern="[0-9]{6}" required>
+      </div>
+      <button type="submit" id="verifyCodeBtn" class="btn btn-primary small-btn">Verify &amp; sign in</button>
+      <div class="inline-actions">
+        <button type="button" id="resendCodeBtn" class="link-btn" hidden>Resend code</button>
+        <button type="button" id="changeEmailBtn" class="link-btn">Use a different email</button>
+      </div>
+    </form>
+    <p id="loginStatus" class="access-status" role="status"></p>
+  </div>
+
+  <div id="requestPanel" class="config-panel access-panel" hidden>
     <h2>Request more scans</h2>
-    <p>Send a request. Once it is approved, you will get an access code by email.</p>
-    <form id="accessForm">
-      <div class="field-group">
-        <label for="accessEmail">Email</label>
-        <input type="email" id="accessEmail" autocomplete="email" required>
-      </div>
-      <button type="submit" id="accessSubmit" class="btn btn-primary small-btn">Request access</button>
-    </form>
-    <p id="accessStatus" class="access-status" role="status"></p>
-    <hr>
-    <form id="codeForm">
-      <div class="field-group">
-        <label for="accessCode">Have an access code?</label>
-        <input type="text" id="accessCode" autocomplete="off" spellcheck="false">
-      </div>
-      <button type="submit" class="btn btn-primary small-btn">Save access code</button>
-    </form>
-    <p id="codeStatus" class="access-status" role="status"></p>
+    <p>You have used all your available scans. Request more scans for your account.</p>
+    <button type="button" id="requestScansBtn" class="btn btn-primary small-btn">Request more scans</button>
+    <p id="requestScansStatus" class="access-status" role="status"></p>
   </div>
 
   <div id="statusPanel" class="status-panel">

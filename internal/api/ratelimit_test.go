@@ -55,7 +55,8 @@ func TestExtensionScanClientIsRateLimited(t *testing.T) {
 	}
 }
 
-func TestExtensionFreeScanLimit(t *testing.T) {
+// Extension scans: guests must log in, legacy access codes still count during switch-over.
+func TestExtensionScanAccess(t *testing.T) {
 	config.InitGlobal(&config.Config{JWTSecret: "test-jwt-secret-12345", AccessApprovalEnabled: true, MaxConcurrentScans: 2})
 	defer config.InitGlobal(&config.Config{})
 	logger := zap.NewNop()
@@ -64,8 +65,7 @@ func TestExtensionFreeScanLimit(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	quotaPath := filepath.Join(dir, "ext.json")
-	router := NewRouter(&Handler{Logger: logger, Access: store, ExtQuota: NewExtQuota(quotaPath)}, logger)
+	router := NewRouter(&Handler{Logger: logger, Access: store}, logger)
 	guest := helperGenerateToken("test-jwt-secret-12345")
 
 	post := func(r http.Handler, ip, token string) *httptest.ResponseRecorder {
@@ -88,26 +88,12 @@ func TestExtensionFreeScanLimit(t *testing.T) {
 		return *res.ScansRemaining
 	}
 
-	for i := 1; i <= ExtensionFreeScans; i++ {
-		w := post(router, "203.0.113.7", guest)
-		if w.Code != http.StatusOK || remaining(w) != ExtensionFreeScans-i {
-			t.Fatalf("free scan %d: got %d, %d left", i, w.Code, remaining(w))
-		}
-	}
-	if w := post(router, "203.0.113.7", guest); w.Code != http.StatusForbidden || !strings.Contains(w.Body.String(), "free_scans_used") {
-		t.Fatalf("scan 6: expected 403 free_scans_used, got %d %s", w.Code, w.Body)
-	}
-	if w := post(router, "198.51.100.9", guest); w.Code != http.StatusOK {
-		t.Errorf("other IP: expected 200, got %d", w.Code)
+	// Guest token is refused with login_required while access approval is enabled.
+	if w := post(router, "203.0.113.7", guest); w.Code != http.StatusForbidden || !strings.Contains(w.Body.String(), "login_required") {
+		t.Fatalf("guest scan: expected 403 login_required, got %d %s", w.Code, w.Body)
 	}
 
-	// Lifetime cap survives a restart.
-	restarted := NewRouter(&Handler{Logger: logger, Access: store, ExtQuota: NewExtQuota(quotaPath)}, logger)
-	if w := post(restarted, "203.0.113.7", guest); w.Code != http.StatusForbidden {
-		t.Errorf("after restart: expected 403, got %d", w.Code)
-	}
-
-	// An approved access code keeps working from the same IP and is counted on the code.
+	// An approved access code keeps working during switchover and is counted on the code.
 	code, _, err := store.CreateTrial("user@example.com", 2)
 	if err != nil || code == "" {
 		t.Fatalf("create code: %v", err)

@@ -12,7 +12,6 @@ services:
       - SMTP_HOST=smtp.gmail.com
       - SMTP_PORT=587
       - SMTP_USERNAME=iamsabroy@gmail.com
-      - SMTP_PASSWORD=ezxzxvzuytbomnik
       - SMTP_FROM=iamsabroy@gmail.com
       - LEAD_CAPTURE_ENABLED=true
       - LEAD_NOTIFY_EMAIL=iamsabroy@gmail.com

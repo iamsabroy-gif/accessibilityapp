@@ -61,10 +61,20 @@ func main() {
 	// Visits
 	visitStore := visits.NewStore(cfg.VisitStorePath)
 
-	// Returning-user access approval
-	accessStore, err := access.NewStore(cfg.AccessStorePath)
-	if err != nil {
-		logger.Fatal("failed to load access store", zap.Error(err))
+	// Returning-user access approval & user accounts
+	var accessStore access.Store
+	if cfg.MongoDBURI != "" {
+		accessStore, err = access.NewMongoStore(context.Background(), cfg.MongoDBURI, cfg.MongoDBDB)
+		if err != nil {
+			logger.Fatal("failed to connect to MongoDB access store", zap.Error(err))
+		}
+		defer func() { _ = accessStore.Close(context.Background()) }()
+		logger.Info("connected to MongoDB access store", zap.String("db", cfg.MongoDBDB))
+	} else {
+		accessStore, err = access.NewStore(cfg.AccessStorePath)
+		if err != nil {
+			logger.Fatal("failed to load access store", zap.Error(err))
+		}
 	}
 	accessMailer := &access.SMTPMailer{
 		Host:     cfg.SMTPHost,
@@ -97,7 +107,6 @@ func main() {
 		Access:       accessStore,
 		AccessMailer: accessMailer,
 		Results:      api.NewResultStore(resultDir),
-		ExtQuota:     api.NewExtQuota("data/extension_scans.json"),
 	}
 
 	// Router

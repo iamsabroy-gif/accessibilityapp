@@ -91,3 +91,34 @@ Keep it private: anyone with the code can use your scans.
 `, code, r.MaxScans, expiry, appURL)
 	return
 }
+
+// LoginCodeEmail is sent to a user with their 6-digit email login code.
+func LoginCodeEmail(code string, ttl time.Duration) (subject, body string) {
+	mins := int(ttl.Minutes())
+	if mins <= 0 {
+		mins = 10
+	}
+	subject = "Your AccessScan login code"
+	body = fmt.Sprintf(`Your AccessScan login code is:
+
+    %s
+
+It expires in %d minutes and can only be used once.
+
+If you did not request this code, you can safely ignore this email.
+`, code, mins)
+	return
+}
+
+// UserScansAddedEmail is sent to a user when an admin approves additional scans on their account.
+func UserScansAddedEmail(scansAdded int, appURL string) (subject, body string) {
+	subject = fmt.Sprintf("You've been approved for %d more AccessScan scans", scansAdded)
+	linkLine := ""
+	if appURL != "" {
+		linkLine = fmt.Sprintf("\nSign in with your email at %s to start scanning.\n", appURL)
+	}
+	body = fmt.Sprintf(`Good news — you've been approved for %d more scans on AccessScan.
+
+The scans have been added to your account automatically; no code is needed.%s`, scansAdded, linkLine)
+	return
+}

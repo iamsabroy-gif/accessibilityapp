@@ -16,6 +16,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/go-chi/httprate"
 	"github.com/golang-jwt/jwt/v4"
 	"github.com/webaccessibility/server/internal/access"
 	"github.com/webaccessibility/server/internal/config"
@@ -40,9 +41,9 @@ type Handler struct {
 	LeadStore    *leads.Store
 	LeadNotifier leads.Notifier
 	VisitStore   *visits.Store
-	// Access holds returning-user access requests; AccessMailer emails the
-	// owner and users about them. Both optional.
-	Access       *access.Store
+	// Access holds user accounts, login codes, and access requests; AccessMailer
+	// emails the owner and users about them. Both optional.
+	Access       access.Store
 	AccessMailer access.Mailer
 	activeScans  int32
 
@@ -51,10 +52,10 @@ type Handler struct {
 	Results     *ResultStore
 	resultsOnce sync.Once
 
-	// ExtQuota caps free extension scans (POST /scan/client) per client IP for
-	// guest tokens. Created in memory on first use if nil.
-	ExtQuota  *ExtQuota
-	quotaOnce sync.Once
+	// authLimitOnce initializes per-email code and per-IP new-account limiters.
+	authLimitOnce       sync.Once
+	codeEmailLimiter    *httprate.RateLimiter
+	newAccountIPLimiter *httprate.RateLimiter
 
 	// crawls tracks server-side multi-page scans (see crawl.go).
 	crawls crawlStore
@@ -179,10 +180,7 @@ func (h *Handler) ScanClient(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	remaining, ok := h.extensionScanAllowance(w, r)
-	if !ok {
-		return
-	}
+	remaining := scansRemainingFromContext(r.Context())
 
 	r.Header.Set("X-Scan-URL", raw.URL)
 	h.Logger.Info("ingesting client scan result", zap.String("url", raw.URL), zap.Int("violations", len(raw.Violations)))

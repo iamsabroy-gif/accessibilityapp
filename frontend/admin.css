@@ -986,3 +986,9 @@ th[aria-sort="none"] .th-sort-btn::after {
   text-align: left;
 }
 .access-table thead th.num { text-align: right; }
+.access-section-heading {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin: 1rem 0 0.5rem;
+}

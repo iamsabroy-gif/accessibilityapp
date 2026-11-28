@@ -12,9 +12,7 @@
 const DEFAULT_API_BASE  = 'https://www.accessscan.in';
 const LS_KEY_TOKEN      = 'wacs_token';
 const LS_KEY_TOKEN_EXP  = 'wacs_token_exp';
-const LS_KEY_TOKEN_KIND = 'wacs_token_kind';        // 'guest' or 'access'
-const LS_KEY_ACCESS_CODE = 'accessscan_access_code'; // owner-approved code (kept across visits)
-const SS_KEY_TRIAL_CODE  = 'accessscan_trial_code';  // free-scan code from registration (this session only)
+const LS_KEY_TOKEN_KIND = 'wacs_token_kind';        // 'guest' or 'user'
 const LS_KEY_SCAN_MODE   = 'wacs_scan_mode'; // 'parallel' or 'serial'
 
 // Token refresh buffer — refresh when less than this time remains (ms)
@@ -27,11 +25,13 @@ let adminClickTimer = null;
 // ─── State ────────────────────────────────────────────────────
 const state = {
   view: 'hero',
-  accessApprovalEnabled: false,   // from GET /api/v1/ (see "Returning-user access approval")
+  accessApprovalEnabled: false,   // from GET /api/v1/
   infoReady: Promise.resolve(),
   scanResult: null,
   token: null,
   tokenExp: null,
+  userEmail: null,
+  scansLeft: null,
   adminUnlocked: false,
   adminToken: null,
   coverageEntries: [],
@@ -170,37 +170,21 @@ function renderCoverageRows() {
 // ─── Session / Token Management ───────────────────────────────
 // All visitors get a JWT automatically. No secret needed from the client.
 async function ensureToken() {
-  // Returning users with an approved access code scan with a token tied to it,
-  // so the server can count their scans. Everyone else gets a guest token.
-  const code = state.accessApprovalEnabled ? getAccessCode() : '';
-  const kind = code ? 'access' : 'guest';
-
-  // Use cached token if still valid and of the right kind
   const cached    = localStorage.getItem(LS_KEY_TOKEN);
   const cachedExp = parseInt(localStorage.getItem(LS_KEY_TOKEN_EXP) || '0', 10);
   const cachedKind = localStorage.getItem(LS_KEY_TOKEN_KIND) || 'guest';
-  if (cached && cachedKind === kind && Date.now() < cachedExp - TOKEN_REFRESH_BUFFER_MS) {
+
+  if (cached && (cachedKind === 'user' || cachedKind === 'guest') && Date.now() < cachedExp - TOKEN_REFRESH_BUFFER_MS) {
     state.token    = cached;
     state.tokenExp = cachedExp;
     return true;
   }
 
-  // Request a fresh session token from the server
+  // Request a fresh guest session token from the server
   try {
-    const res = code
-      ? await fetch(`${apiBase()}/api/v1/access/session`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ code }),
-        })
-      : await fetch(`${apiBase()}/api/v1/session`);
+    const res = await fetch(`${apiBase()}/api/v1/session`);
     const data = await res.json();
-    if (code && res.status === 403) {
-      handleAccessDenied(data);
-      return false;
-    }
     if (!res.ok) throw new Error(data.error || 'Session request failed');
-    if (code) showAccessRemaining(data.remaining);
 
     const expiresIn = (data.expires_in || 1200) * 1000; // convert s → ms
     const exp       = Date.now() + expiresIn;
@@ -209,7 +193,7 @@ async function ensureToken() {
     state.tokenExp = exp;
     localStorage.setItem(LS_KEY_TOKEN,     data.token);
     localStorage.setItem(LS_KEY_TOKEN_EXP, String(exp));
-    localStorage.setItem(LS_KEY_TOKEN_KIND, kind);
+    localStorage.setItem(LS_KEY_TOKEN_KIND, 'guest');
     return true;
   } catch (err) {
     showError(`Could not reach the API server: ${err.message}`);
@@ -217,12 +201,14 @@ async function ensureToken() {
   }
 }
 
-// Proactively renew the token in the background before it expires
+// Proactively renew guest tokens in the background before expiry (user tokens last 30 days)
 function scheduleTokenRenewal() {
+  if (localStorage.getItem(LS_KEY_TOKEN_KIND) === 'user') return;
   const exp = state.tokenExp || 0;
   const msUntilRefresh = exp - Date.now() - TOKEN_REFRESH_BUFFER_MS;
   if (msUntilRefresh > 0) {
     setTimeout(async () => {
+      if (localStorage.getItem(LS_KEY_TOKEN_KIND) === 'user') return;
       localStorage.removeItem(LS_KEY_TOKEN);
       localStorage.removeItem(LS_KEY_TOKEN_EXP);
       state.token = null;
@@ -287,7 +273,7 @@ async function runScan(url, wcagLevel, depth = 0, shouldGenerateReport = false, 
       return;
     }
     if (!res.ok) throw new Error(data.error || 'Scan failed');
-    if (localStorage.getItem(LS_KEY_TOKEN_KIND) === 'access') refreshAccessRemaining();
+    if (isUserLoggedIn()) refreshAuthMe();
 
     state.scanResult = data;
     data.embedded_results = [];
@@ -374,7 +360,7 @@ async function runCrawl(url, opts = {}) {
       return;
     }
     if (!res.ok) throw new Error(job.error || 'Scan failed');
-    if (localStorage.getItem(LS_KEY_TOKEN_KIND) === 'access') refreshAccessRemaining();
+    if (isUserLoggedIn()) refreshAuthMe();
 
     rememberCrawl(job.crawl_id);
     scheduleTokenRenewal();
@@ -2159,21 +2145,168 @@ function triggerAdminClick() {
   }
 }
 
-// ─── App Registration Helpers ─────────────────────────────────
+// ─── Email-Code Auth & Session Helpers ────────────────────────
+let pendingScanCallback = null;
+let pendingLoginEmail = '';
+let resendTimerId = null;
+
 function isUserRegistered() {
   return localStorage.getItem('accessscan_registered') === '1' || sessionStorage.getItem('accessscan_registered') === '1';
 }
 
-let pendingScanCallback = null;
+function isUserLoggedIn() {
+  try {
+    const token = localStorage.getItem(LS_KEY_TOKEN);
+    const kind = localStorage.getItem(LS_KEY_TOKEN_KIND);
+    const exp = parseInt(localStorage.getItem(LS_KEY_TOKEN_EXP) || '0', 10);
+    return Boolean(token && kind === 'user' && Date.now() < exp - TOKEN_REFRESH_BUFFER_MS);
+  } catch (_) {
+    return false;
+  }
+}
 
-function openAppRegisterModal(onSuccess) {
-  pendingScanCallback = onSuccess;
+function needsLogin() {
+  return state.accessApprovalEnabled && !isUserLoggedIn();
+}
+
+function clearAccessToken() {
+  localStorage.removeItem(LS_KEY_TOKEN);
+  localStorage.removeItem(LS_KEY_TOKEN_EXP);
+  localStorage.removeItem(LS_KEY_TOKEN_KIND);
+  state.token = null;
+  state.tokenExp = null;
+}
+
+function showAccessRemaining(remaining) {
+  const note = $('access-remaining-note');
+  if (!note || typeof remaining !== 'number') return;
+  note.textContent = `${remaining} scan${remaining === 1 ? '' : 's'} left on your account.`;
+  note.hidden = false;
+}
+
+function updateHeaderSession() {
+  const bar = $('user-session-bar');
+  const emailEl = $('user-email-label');
+  const scansEl = $('user-scans-left');
+  const signInBtn = $('user-signin-btn');
+  const loggedIn = isUserLoggedIn();
+  const email = state.userEmail || localStorage.getItem('accessscan_user_email') || '';
+
+  if (bar && emailEl && scansEl) {
+    if (loggedIn && email) {
+      emailEl.textContent = email;
+      scansEl.textContent = typeof state.scansLeft === 'number'
+        ? `${state.scansLeft} scan${state.scansLeft === 1 ? '' : 's'} left`
+        : '';
+      bar.classList.remove('hidden');
+    } else {
+      emailEl.textContent = '';
+      scansEl.textContent = '';
+      bar.classList.add('hidden');
+    }
+  }
+  if (signInBtn) {
+    signInBtn.classList.toggle('hidden', loggedIn || !state.accessApprovalEnabled);
+  }
+}
+
+async function refreshAuthMe() {
+  if (!isUserLoggedIn()) {
+    updateHeaderSession();
+    return;
+  }
+  try {
+    const res = await fetch(`${apiBase()}/api/v1/auth/me`, {
+      headers: { 'Authorization': `Bearer ${state.token}` },
+    });
+    if (res.status === 401) {
+      await logoutUser();
+      return;
+    }
+    if (!res.ok) return;
+    const data = await res.json();
+    state.userEmail = data.email || state.userEmail;
+    state.scansLeft = typeof data.scans_left === 'number' ? data.scans_left : state.scansLeft;
+    if (state.userEmail) localStorage.setItem('accessscan_user_email', state.userEmail);
+    updateHeaderSession();
+    if (typeof state.scansLeft === 'number') showAccessRemaining(state.scansLeft);
+  } catch (_) {}
+}
+
+async function logoutUser() {
+  clearAccessToken();
+  localStorage.removeItem('accessscan_user_email');
+  state.userEmail = null;
+  state.scansLeft = null;
+  const note = $('access-remaining-note');
+  if (note) note.hidden = true;
+  updateHeaderSession();
+  await ensureToken();
+}
+
+function clearResendTimer() {
+  if (resendTimerId) {
+    clearInterval(resendTimerId);
+    resendTimerId = null;
+  }
+}
+
+function startResendCountdown() {
+  clearResendTimer();
+  const resendBtn = $('app-login-resend');
+  const statusEl = $('app-verify-status');
+  if (resendBtn) resendBtn.classList.add('hidden');
+  let remaining = 60;
+  if (statusEl) {
+    statusEl.textContent = `You can resend the code in ${remaining}s.`;
+    statusEl.style.display = 'block';
+  }
+  resendTimerId = setInterval(() => {
+    remaining -= 1;
+    if (remaining <= 0) {
+      clearResendTimer();
+      if (resendBtn) resendBtn.classList.remove('hidden');
+      if (statusEl) statusEl.textContent = 'Didn’t receive a code? You can resend it now.';
+    } else if (statusEl) {
+      statusEl.textContent = `You can resend the code in ${remaining}s.`;
+    }
+  }, 1000);
+}
+
+function showLoginStep(step) {
+  const step1 = $('app-register-form');
+  const step2 = $('app-verify-form');
+  if (!step1 || !step2) return;
+  if (step === 2) {
+    step1.classList.add('hidden');
+    step2.classList.remove('hidden');
+    const codeInput = $('app-login-code');
+    if (codeInput) {
+      codeInput.value = '';
+      setTimeout(() => codeInput.focus(), 50);
+    }
+    startResendCountdown();
+  } else {
+    clearResendTimer();
+    step2.classList.add('hidden');
+    step1.classList.remove('hidden');
+    setTimeout(() => $('app-register-email')?.focus(), 50);
+  }
+}
+
+function openAppRegisterModal(onSuccess, message = '') {
+  pendingScanCallback = typeof onSuccess === 'function' ? onSuccess : null;
   const modal = $('app-register-modal');
   const input = $('app-register-email');
   const errEl = $('app-register-error');
+  const verifyErr = $('app-verify-error');
+  const statusEl = $('app-register-status');
   if (!modal) return;
-  if (errEl) { errEl.textContent = ''; errEl.style.display = 'none'; }
-  if (input) input.value = '';
+  if (errEl) { errEl.textContent = message || ''; errEl.style.display = message ? 'block' : 'none'; }
+  if (verifyErr) { verifyErr.textContent = ''; verifyErr.style.display = 'none'; }
+  if (statusEl) { statusEl.textContent = ''; statusEl.style.display = 'none'; }
+  if (input && !input.value) input.value = localStorage.getItem('accessscan_user_email') || '';
+  showLoginStep(1);
   modal.classList.add('open');
   modal.setAttribute('aria-hidden', 'false');
   modal.removeAttribute('inert');
@@ -2182,6 +2315,7 @@ function openAppRegisterModal(onSuccess) {
 }
 
 function closeAppRegisterModal() {
+  clearResendTimer();
   const modal = $('app-register-modal');
   if (!modal) return;
   modal.classList.remove('open');
@@ -2190,121 +2324,66 @@ function closeAppRegisterModal() {
   document.body.style.overflow = '';
 }
 
-
-
-
-
-// ─── Returning-user access approval ───────────────────────────
-// A user who registered in an earlier browser session is "returning". When the
-// server has access approval turned on, returning users need an access code
-// that the owner approves; the code is emailed to them and limits their scans.
-
-// The approved code wins; otherwise the free-trial code from registration.
-function getAccessCode() {
-  try {
-    return localStorage.getItem(LS_KEY_ACCESS_CODE) || sessionStorage.getItem(SS_KEY_TRIAL_CODE) || '';
-  } catch (_) { return ''; }
-}
-
-function usingTrialCode() {
-  try { return !localStorage.getItem(LS_KEY_ACCESS_CODE) && !!sessionStorage.getItem(SS_KEY_TRIAL_CODE); } catch (_) { return false; }
-}
-
-// Forget whichever code is in use (see getAccessCode).
-function forgetAccessCode() {
-  try {
-    if (localStorage.getItem(LS_KEY_ACCESS_CODE)) localStorage.removeItem(LS_KEY_ACCESS_CODE);
-    else sessionStorage.removeItem(SS_KEY_TRIAL_CODE);
-  } catch (_) {}
-}
-
-function clearAccessToken() {
-  localStorage.removeItem(LS_KEY_TOKEN);
-  localStorage.removeItem(LS_KEY_TOKEN_EXP);
-  localStorage.removeItem(LS_KEY_TOKEN_KIND);
-  state.token = null;
-}
-
-// With approval on, every registered user scans with a code: the free trial
-// code from registration (first visit only), or an owner-approved one.
-function needsAccessCode() {
-  return state.accessApprovalEnabled && isUserRegistered() && !getAccessCode();
-}
-
 function isAccessError(res, data) {
-  return res.status === 403 && data && typeof data.code === 'string' && data.code.startsWith('access_');
+  return res.status === 403 && data && (
+    data.code === 'login_required' ||
+    data.code === 'scans_used_up' ||
+    data.code === 'blocked'
+  );
 }
 
-const TRIAL_MESSAGES = {
-  access_exhausted: "You've used your free scans. Request access below to keep scanning.",
-  trial_used:       "You've already used the free scans for this email. Request access below to keep scanning.",
-};
-
-const ACCESS_MESSAGES = {
-  access_required:  'Enter your access code, or request access below.',
-  access_exhausted: 'Your access code has no scans left. Request access again to get a new one.',
-  access_expired:   'Your access code has expired. Request access again to get a new one.',
-  access_revoked:   'Your access code is no longer active. Request access again if you need it.',
-  access_invalid:   'That access code was not recognised. Check it and try again.',
-};
-
-function showAccessRemaining(remaining) {
-  const note = $('access-remaining-note');
-  if (!note || typeof remaining !== 'number') return;
-  const label = usingTrialCode() ? 'Free trial' : 'Access code active';
-  note.textContent = `${label}: ${remaining} scan${remaining === 1 ? '' : 's'} left.`;
-  note.hidden = false;
-}
-
-// Re-reads the scans left on the current code (exchanging it does not use a scan).
-async function refreshAccessRemaining() {
-  const code = getAccessCode();
-  if (!code) return;
-  try {
-    const res = await fetch(`${apiBase()}/api/v1/access/session`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ code }),
-    });
-    const data = await res.json().catch(() => ({}));
-    if (res.ok) showAccessRemaining(data.remaining);
-    else if (data.code === 'access_exhausted') showAccessRemaining(0);
-  } catch (_) {}
-}
-
-// The stored code can no longer be used: forget it and ask again.
 function handleAccessDenied(data, retry) {
   const code = data && data.code;
-  const msg = (usingTrialCode() && TRIAL_MESSAGES[code]) || ACCESS_MESSAGES[code] || (data && data.error) || '';
-  forgetAccessCode();
-  clearAccessToken();
-  const note = $('access-remaining-note');
-  if (note) note.hidden = true;
-  openAccessModal(retry, msg);
+  if (code === 'login_required') {
+    clearAccessToken();
+    state.userEmail = null;
+    state.scansLeft = null;
+    updateHeaderSession();
+    openAppRegisterModal(retry, (data && data.error) || 'Please sign in with your email to scan.');
+    return;
+  }
+  if (code === 'scans_used_up') {
+    state.scansLeft = 0;
+    updateHeaderSession();
+    showAccessRemaining(0);
+    openAccessModal(retry, (data && data.error) || "You've used all your scans. Request more scans below.", false);
+    return;
+  }
+  if (code === 'blocked') {
+    openAccessModal(null, (data && data.error) || 'Your account has been blocked.', true);
+  }
 }
 
 let pendingAccessCallback = null;
 
-function openAccessModal(onSuccess, message = '') {
+function openAccessModal(onSuccess, message = '', blocked = false) {
   pendingAccessCallback = typeof onSuccess === 'function' ? onSuccess : null;
   const modal = $('app-access-modal');
   if (!modal) return;
+  const titleEl = $('app-access-title');
+  const subtitleEl = $('app-access-subtitle');
   const notice = $('app-access-notice');
+  const reqBtn = $('app-access-request-btn');
+  const status = $('app-access-request-status');
+  if (titleEl) titleEl.textContent = blocked ? 'Account blocked' : 'Out of scans';
+  if (subtitleEl) subtitleEl.textContent = blocked
+    ? 'Scanning is disabled for this account.'
+    : 'Request additional scans for your account.';
   if (notice) {
     notice.textContent = message;
     notice.style.display = message ? 'block' : 'none';
   }
-  const status = $('app-access-request-status');
+  if (reqBtn) {
+    reqBtn.classList.toggle('hidden', blocked);
+    reqBtn.disabled = false;
+    reqBtn.textContent = 'Request more scans';
+  }
   if (status) { status.textContent = ''; status.style.display = 'none'; }
-  const emailInput = $('app-access-email');
-  if (emailInput && !emailInput.value) emailInput.value = localStorage.getItem('accessscan_user_email') || '';
-  const codeInput = $('app-access-code');
-  if (codeInput) codeInput.value = '';
   modal.classList.add('open');
   modal.setAttribute('aria-hidden', 'false');
   modal.removeAttribute('inert');
   document.body.style.overflow = 'hidden';
-  setTimeout(() => codeInput?.focus(), 100);
+  setTimeout(() => (blocked ? $('app-access-cancel') : reqBtn)?.focus(), 100);
 }
 
 function closeAccessModal() {
@@ -2316,58 +2395,27 @@ function closeAccessModal() {
   document.body.style.overflow = '';
 }
 
-async function submitAccessCode(e) {
-  e.preventDefault();
-  const input = $('app-access-code');
-  const btn = $('app-access-code-submit');
-  const notice = $('app-access-notice');
-  const code = input?.value.trim();
-  if (!code) { input?.focus(); return; }
-  if (btn) { btn.disabled = true; btn.textContent = 'Checking…'; }
-  try {
-    localStorage.setItem(LS_KEY_ACCESS_CODE, code);
-    clearAccessToken();
-    const ok = await ensureToken();  // validates the code; on failure re-opens with a message
-    if (!ok) return;
-    closeAccessModal();
-    scheduleTokenRenewal();
-    const cb = pendingAccessCallback;
-    pendingAccessCallback = null;
-    if (cb) cb();
-  } catch (err) {
-    if (notice) { notice.textContent = err.message || 'Could not check the code.'; notice.style.display = 'block'; }
-  } finally {
-    if (btn) { btn.disabled = false; btn.textContent = 'Use Code & Start Scan →'; }
-  }
-}
-
-async function submitAccessRequest(e) {
-  e.preventDefault();
-  const input = $('app-access-email');
-  const btn = $('app-access-request-submit');
+async function submitAccessRequest() {
+  const btn = $('app-access-request-btn');
   const status = $('app-access-request-status');
-  const email = input?.value.trim();
   const show = (msg) => { if (status) { status.textContent = msg; status.style.display = 'block'; } };
-  if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-    show('Please enter a valid email address.');
-    input?.focus();
-    return;
-  }
-  const honeypot = document.querySelector('#app-access-request-form input[name="website"]')?.value || '';
   if (btn) { btn.disabled = true; btn.textContent = 'Sending…'; }
   try {
     const res = await fetch(`${apiBase()}/api/v1/access/request`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, website: honeypot }),
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${state.token}`,
+      },
+      body: JSON.stringify({}),
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(data.error || 'Request failed. Please try again.');
-    show(`Request sent. Once it's approved, we'll email your access code to ${email}.`);
+    show("Request sent. We'll email you once more scans are added to your account.");
   } catch (err) {
     show(err.message || 'Request failed. Please try again.');
   } finally {
-    if (btn) { btn.disabled = false; btn.textContent = 'Request Access'; }
+    if (btn) { btn.disabled = false; btn.textContent = 'Request more scans'; }
   }
 }
 
@@ -2436,42 +2484,48 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     };
 
-    if (!isUserRegistered()) {
-      openAppRegisterModal(triggerScan);
-      return;
-    }
-
     await state.infoReady;
-    if (needsAccessCode()) {
-      openAccessModal(triggerScan);
+    if (needsLogin() || (!state.accessApprovalEnabled && !isUserRegistered())) {
+      openAppRegisterModal(triggerScan);
       return;
     }
 
     await triggerScan();
   });
 
-  // ── Email registration modal wiring ─────────────
+  // ── Two-step email-code login modal wiring ───────
+  async function sendLoginCode(email) {
+    const res = await fetch(`${apiBase()}/api/v1/auth/code`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || 'Could not send verification code.');
+    return data;
+  }
+
   $('app-register-form')?.addEventListener('submit', async (e) => {
     e.preventDefault();
     const emailInput = $('app-register-email');
+    const consentInput = $('app-register-consent');
     const submitBtn = $('app-register-submit');
     const errEl = $('app-register-error');
     const email = emailInput?.value.trim();
-    if (!email) return;
 
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(email)) {
+    if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
       if (errEl) {
         errEl.textContent = 'Please enter a valid email address.';
         errEl.style.display = 'block';
       }
+      emailInput?.focus();
       return;
     }
 
     const honeypot = document.querySelector('#app-register-form input[name="website"]')?.value || '';
     if (submitBtn) {
       submitBtn.disabled = true;
-      submitBtn.textContent = 'Registering…';
+      submitBtn.textContent = 'Sending code…';
     }
     if (errEl) {
       errEl.textContent = '';
@@ -2479,58 +2533,155 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     try {
-      const res = await fetch(`${apiBase()}/api/v1/leads`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          email: email,
-          source: 'app_scan',
-          consent: true,
-          website: honeypot
-        })
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        throw new Error(data.error || 'Registration failed. Please try again.');
+      // Keep lead capture when user consents
+      if (!consentInput || consentInput.checked) {
+        fetch(`${apiBase()}/api/v1/leads`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            email,
+            source: 'app_scan',
+            consent: true,
+            website: honeypot,
+          }),
+        }).catch(() => {});
       }
-      localStorage.setItem('accessscan_registered', '1');
-      sessionStorage.setItem('accessscan_registered', '1');
-      localStorage.setItem('accessscan_user_email', email);
-      if (data.trial_code) {
-        sessionStorage.setItem(SS_KEY_TRIAL_CODE, data.trial_code);
-        clearAccessToken();
-      }
-      closeAppRegisterModal();
-      const cb = typeof pendingScanCallback === 'function' ? pendingScanCallback : null;
-      pendingScanCallback = null;
-      await state.infoReady;
-      if (needsAccessCode()) {
-        openAccessModal(cb, data.trial_used ? TRIAL_MESSAGES.trial_used : ACCESS_MESSAGES.access_required);
-      } else if (cb) {
-        cb();
-      }
+
+      await sendLoginCode(email);
+      pendingLoginEmail = email;
+      const sentToEl = $('app-verify-sent-to');
+      if (sentToEl) sentToEl.textContent = `We sent a 6-digit code to ${email}.`;
+      showLoginStep(2);
     } catch (err) {
       if (errEl) {
-        errEl.textContent = err.message || 'Registration failed. Please try again.';
+        errEl.textContent = err.message || 'Could not send verification code.';
         errEl.style.display = 'block';
       }
     } finally {
       if (submitBtn) {
         submitBtn.disabled = false;
-        submitBtn.textContent = 'Register & Start Scan →';
+        submitBtn.textContent = 'Send code →';
       }
     }
   });
 
-  // ── Returning-user access modal ─────────────────
-  $('app-access-code-form')?.addEventListener('submit', submitAccessCode);
-  $('app-access-request-form')?.addEventListener('submit', submitAccessRequest);
+  $('app-verify-form')?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const codeInput = $('app-login-code');
+    const submitBtn = $('app-verify-submit');
+    const errEl = $('app-verify-error');
+    const code = (codeInput?.value || '').trim();
+
+    if (!/^\d{6}$/.test(code)) {
+      if (errEl) {
+        errEl.textContent = 'Please enter the 6-digit code from your email.';
+        errEl.style.display = 'block';
+      }
+      codeInput?.focus();
+      return;
+    }
+
+    if (submitBtn) {
+      submitBtn.disabled = true;
+      submitBtn.textContent = 'Verifying…';
+    }
+    if (errEl) {
+      errEl.textContent = '';
+      errEl.style.display = 'none';
+    }
+
+    try {
+      const res = await fetch(`${apiBase()}/api/v1/auth/verify`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: pendingLoginEmail, code }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || 'Verification failed. Please check the code.');
+
+      const expiresIn = (data.expires_in || 30 * 86400) * 1000;
+      const exp = Date.now() + expiresIn;
+      state.token = data.token;
+      state.tokenExp = exp;
+      state.userEmail = data.email || pendingLoginEmail;
+      state.scansLeft = typeof data.scans_left === 'number' ? data.scans_left : null;
+
+      localStorage.setItem(LS_KEY_TOKEN, data.token);
+      localStorage.setItem(LS_KEY_TOKEN_EXP, String(exp));
+      localStorage.setItem(LS_KEY_TOKEN_KIND, 'user');
+      localStorage.setItem('accessscan_registered', '1');
+      sessionStorage.setItem('accessscan_registered', '1');
+      localStorage.setItem('accessscan_user_email', state.userEmail);
+
+      updateHeaderSession();
+      if (typeof state.scansLeft === 'number') showAccessRemaining(state.scansLeft);
+      closeAppRegisterModal();
+
+      const cb = typeof pendingScanCallback === 'function' ? pendingScanCallback : null;
+      pendingScanCallback = null;
+      if (cb) cb();
+    } catch (err) {
+      if (errEl) {
+        errEl.textContent = err.message || 'Verification failed.';
+        errEl.style.display = 'block';
+      }
+      codeInput?.focus();
+    } finally {
+      if (submitBtn) {
+        submitBtn.disabled = false;
+        submitBtn.textContent = 'Verify & Sign In →';
+      }
+    }
+  });
+
+  $('app-login-resend')?.addEventListener('click', async () => {
+    const resendBtn = $('app-login-resend');
+    const errEl = $('app-verify-error');
+    const statusEl = $('app-verify-status');
+    if (!pendingLoginEmail) return;
+    if (resendBtn) resendBtn.disabled = true;
+    if (errEl) { errEl.textContent = ''; errEl.style.display = 'none'; }
+    try {
+      await sendLoginCode(pendingLoginEmail);
+      startResendCountdown();
+      if (statusEl) statusEl.textContent = `A new code was sent to ${pendingLoginEmail}.`;
+      $('app-login-code')?.focus();
+    } catch (err) {
+      if (errEl) {
+        errEl.textContent = err.message || 'Could not resend code.';
+        errEl.style.display = 'block';
+      }
+    } finally {
+      if (resendBtn) resendBtn.disabled = false;
+    }
+  });
+
+  $('app-login-back')?.addEventListener('click', () => {
+    const errEl = $('app-verify-error');
+    if (errEl) { errEl.textContent = ''; errEl.style.display = 'none'; }
+    showLoginStep(1);
+  });
+
+  $('app-register-modal-overlay')?.addEventListener('click', () => {
+    pendingScanCallback = null;
+    closeAppRegisterModal();
+  });
+
+  $('user-signin-btn')?.addEventListener('click', () => openAppRegisterModal());
+  $('user-logout-btn')?.addEventListener('click', logoutUser);
+
+  // ── Out-of-scans / request-more-scans modal ───────
+  $('app-access-request-btn')?.addEventListener('click', submitAccessRequest);
   $('app-access-cancel')?.addEventListener('click', () => { pendingAccessCallback = null; closeAccessModal(); });
   document.querySelector('#app-access-modal .modal-overlay')?.addEventListener('click', () => { pendingAccessCallback = null; closeAccessModal(); });
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape' && $('app-access-modal')?.classList.contains('open')) {
       pendingAccessCallback = null;
       closeAccessModal();
+    }
+    if (e.key === 'Escape' && $('app-register-modal')?.classList.contains('open')) {
+      pendingScanCallback = null;
+      closeAppRegisterModal();
     }
   });
 
@@ -2565,9 +2716,13 @@ document.addEventListener('DOMContentLoaded', () => {
     if (window.location.hash === '#coverage') showCoverage();
   });
 
-  // Eagerly fetch a session token on page load (fully transparent to the user)
+  // Eagerly fetch a session token on page load (or restore logged-in user session)
   ensureToken().then(ok => {
-    if (ok) scheduleTokenRenewal();
+    if (ok) {
+      scheduleTokenRenewal();
+      if (isUserLoggedIn()) refreshAuthMe();
+      else updateHeaderSession();
+    }
   });
 
   // Drive the PDF coming-soon card visibility from the public Info endpoint.
@@ -2576,7 +2731,7 @@ document.addEventListener('DOMContentLoaded', () => {
   state.infoReady = fetch(`${apiBase()}/api/v1/`).then(r => r.ok ? r.json() : null).then(info => {
     if (!info) return;
     state.accessApprovalEnabled = info.access_approval_enabled === true;
-    if (state.accessApprovalEnabled && getAccessCode()) refreshAccessRemaining();
+    updateHeaderSession();
     const card = $('pdf-coming-soon');
     if (card) {
       const show = info.pdf_scanning_visible === true;
@@ -2602,7 +2757,7 @@ document.addEventListener('DOMContentLoaded', () => {
         scanBtn.disabled = false;
       }
     });
-    state.infoReady.then(() => (needsAccessCode() ? openAccessModal(autoScan) : autoScan()));
+    state.infoReady.then(() => (needsLogin() ? openAppRegisterModal(autoScan) : autoScan()));
   }
 
   // Extension report deep-link: ?report=<id>

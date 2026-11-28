@@ -29,3 +29,7 @@ cmd/smoke
 # Render / CI files (already baked into image)
 render.yaml
 .dockerignore
+
+# Local Go build outputs
+/server
+/migrateaccess

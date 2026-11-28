@@ -20,6 +20,12 @@
       <span>AccessScan</span>
     </div>
     <div class="topbar-actions">
+      <div id="user-session-bar" class="user-session-bar hidden" aria-live="polite">
+        <span id="user-email-label" class="user-email-label"></span>
+        <span id="user-scans-left" class="user-scans-badge"></span>
+        <button id="user-logout-btn" class="topbar-menu-btn" type="button">Log out</button>
+      </div>
+      <button id="user-signin-btn" class="topbar-menu-btn hidden" type="button">Sign in</button>
       <button id="coverage-menu-btn" class="topbar-menu-btn" type="button">WCAG Coverage</button>
       <!--
         Hidden admin trigger: click 5× rapidly to open the admin panel.
@@ -544,7 +550,7 @@
     class="modal-wrap"
     role="dialog"
     aria-modal="true"
-    aria-label="Email registration required"
+    aria-labelledby="app-register-title"
     aria-hidden="true"
     inert
   >
@@ -553,11 +559,13 @@
       <div class="modal-header">
         <span class="modal-icon" aria-hidden="true">✉️</span>
         <div>
-          <div class="modal-title">Registration Required</div>
-          <div class="modal-subtitle">Enter your email to run website accessibility scans</div>
+          <div class="modal-title" id="app-register-title">Sign in to scan</div>
+          <div class="modal-subtitle" id="app-register-subtitle">Enter your email to receive a 6-digit login code</div>
         </div>
       </div>
-      <form id="app-register-form">
+
+      <!-- Step 1: Email + consent -->
+      <form id="app-register-form" novalidate>
         <div class="modal-body">
           <input type="text" name="website" tabIndex="-1" style="display:none !important; position:absolute; left:-9999px;" autocomplete="off" />
           <label for="app-register-email" class="form-label" style="font-size:0.85rem;">Email Address</label>
@@ -569,21 +577,57 @@
             autocomplete="email"
             class="modal-input"
           />
+          <label class="consent-label" style="display:flex; align-items:flex-start; gap:0.5rem; margin-top:0.75rem; font-size:0.8rem; color:var(--text-secondary, #94a3b8); cursor:pointer;">
+            <input id="app-register-consent" type="checkbox" checked style="margin-top:0.2rem;" />
+            <span>I agree to receive scan updates and product news (unsubscribe anytime).</span>
+          </label>
           <p id="app-register-error" class="modal-error" role="alert" aria-live="polite" style="display:none;"></p>
-          <p style="font-size: 0.75rem; color: var(--text-muted, #64748b); margin-top: 0.5rem; line-height: 1.4;">
-            🔒 We respect your privacy. No spam, unsubscribe anytime.
-          </p>
+          <p id="app-register-status" role="status" aria-live="polite" style="font-size:0.8rem; margin-top:0.5rem; color:var(--text-muted, #64748b); display:none;"></p>
         </div>
         <div class="modal-footer">
           <button id="app-register-submit" class="modal-btn-primary" type="submit" style="width: 100%;">
-            Register &amp; Start Scan →
+            Send code →
           </button>
+        </div>
+      </form>
+
+      <!-- Step 2: 6-digit verification code -->
+      <form id="app-verify-form" class="hidden" novalidate>
+        <div class="modal-body">
+          <p id="app-verify-sent-to" style="font-size:0.85rem; margin-bottom:0.75rem; color:var(--text-secondary, #cbd5e1);"></p>
+          <label for="app-login-code" class="form-label" style="font-size:0.85rem;">6-digit verification code</label>
+          <input
+            id="app-login-code"
+            type="text"
+            inputmode="numeric"
+            autocomplete="one-time-code"
+            maxlength="6"
+            pattern="[0-9]{6}"
+            required
+            placeholder="123456"
+            class="modal-input"
+          />
+          <p id="app-verify-error" class="modal-error" role="alert" aria-live="polite" style="display:none;"></p>
+          <p id="app-verify-status" role="status" aria-live="polite" style="font-size:0.8rem; margin-top:0.5rem; color:var(--text-muted, #64748b); display:none;"></p>
+        </div>
+        <div class="modal-footer" style="display:flex; flex-direction:column; gap:0.5rem;">
+          <button id="app-verify-submit" class="modal-btn-primary" type="submit" style="width: 100%;">
+            Verify &amp; Sign In →
+          </button>
+          <div style="display:flex; gap:0.5rem; width:100%;">
+            <button id="app-login-resend" class="modal-btn-secondary hidden" type="button" style="flex:1;">
+              Resend code
+            </button>
+            <button id="app-login-back" class="modal-btn-secondary" type="button" style="flex:1;">
+              Change email
+            </button>
+          </div>
         </div>
       </form>
     </div>
   </div>
 
-  <!-- Returning-user access modal: request owner approval, or enter an emailed access code -->
+  <!-- Scans exhausted / account access modal: single-button request for more scans -->
   <div
     id="app-access-modal"
     class="modal-wrap"
@@ -598,32 +642,16 @@
       <div class="modal-header">
         <span class="modal-icon" aria-hidden="true">🔑</span>
         <div>
-          <div class="modal-title" id="app-access-title">Welcome back</div>
-          <div class="modal-subtitle">Returning users need an approved access code to keep scanning.</div>
+          <div class="modal-title" id="app-access-title">Out of scans</div>
+          <div class="modal-subtitle" id="app-access-subtitle">Request additional scans for your account.</div>
         </div>
       </div>
       <div class="modal-body">
         <p id="app-access-notice" class="modal-error" role="alert" aria-live="polite" style="display:none;"></p>
-
-        <form id="app-access-code-form" novalidate>
-          <label for="app-access-code" class="form-label" style="font-size:0.85rem;">Have an access code?</label>
-          <input id="app-access-code" type="text" required placeholder="AS-…" autocomplete="off" spellcheck="false" class="modal-input" />
-          <button id="app-access-code-submit" class="modal-btn-primary" type="submit" style="width:100%; margin-top:0.6rem;">
-            Use Code &amp; Start Scan →
-          </button>
-        </form>
-
-        <hr style="border:none; border-top:1px solid var(--border, rgba(148,163,184,0.3)); margin:1.25rem 0;" />
-
-        <form id="app-access-request-form" novalidate>
-          <input type="text" name="website" tabIndex="-1" style="display:none !important; position:absolute; left:-9999px;" autocomplete="off" />
-          <label for="app-access-email" class="form-label" style="font-size:0.85rem;">No code yet? Request access</label>
-          <input id="app-access-email" type="email" required placeholder="you@company.com" autocomplete="email" class="modal-input" />
-          <button id="app-access-request-submit" class="modal-btn-secondary" type="submit" style="width:100%; margin-top:0.6rem;">
-            Request Access
-          </button>
-          <p id="app-access-request-status" role="status" aria-live="polite" style="font-size:0.8rem; margin-top:0.5rem; line-height:1.4; display:none;"></p>
-        </form>
+        <button id="app-access-request-btn" class="modal-btn-primary" type="button" style="width:100%;">
+          Request more scans
+        </button>
+        <p id="app-access-request-status" role="status" aria-live="polite" style="font-size:0.85rem; margin-top:0.75rem; line-height:1.4; display:none;"></p>
       </div>
       <div class="modal-footer">
         <button id="app-access-cancel" class="modal-btn-secondary" type="button" style="width:100%;">Close</button>

@@ -9,45 +9,43 @@ async function getApiBaseUrl() {
   return data.apiBaseUrl || DEFAULT_API_BASE;
 }
 
-// Error that makes the popup open the "request access / enter code" panel.
-function accessError(message) {
+// Error that makes the popup open the login or "request more scans" panel.
+function authError(code, message) {
   const err = new Error(message);
-  err.code = 'quota';
+  err.code = code;
   return err;
 }
 
-// Returns a scan token: from the saved access code if there is one (the server
-// counts each scan against the code), otherwise an anonymous guest token.
+const USER_TOKEN_KEYS = ['userToken', 'userTokenExp', 'userEmail'];
+const GUEST_TOKEN_KEYS = ['guestToken', 'guestTokenExp', 'authToken', 'tokenExp', 'accessCode'];
+
+// Returns a scan token: the logged-in user's JWT if present and valid,
+// otherwise an anonymous guest token (for servers without approval enabled).
 async function ensureToken(apiBase) {
-  const data = await chrome.storage.local.get(['authToken', 'tokenExp', 'accessCode']);
+  const data = await chrome.storage.local.get(['userToken', 'userTokenExp', 'guestToken', 'guestTokenExp']);
   const now = Math.floor(Date.now() / 1000);
-  if (data.authToken && data.tokenExp && (data.tokenExp - now > 60)) {
-    return data.authToken;
+
+  if (data.userToken && (!data.userTokenExp || data.userTokenExp - now > 60)) {
+    return data.userToken;
+  }
+  if (data.userToken && data.userTokenExp && data.userTokenExp - now <= 60) {
+    await chrome.storage.local.remove(USER_TOKEN_KEYS);
   }
 
-  let res;
-  if (data.accessCode) {
-    res = await fetch(`${apiBase}/api/v1/access/session`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ code: data.accessCode })
-    });
-    if (res.status === 403) {
-      const body = await res.json().catch(() => ({}));
-      throw accessError(`Your access code cannot be used: ${body.error || 'invalid code'}. Request access again or enter a new code.`);
-    }
-  } else {
-    res = await fetch(`${apiBase}/api/v1/session`, { method: 'GET' });
+  if (data.guestToken && data.guestTokenExp && (data.guestTokenExp - now > 60)) {
+    return data.guestToken;
   }
+
+  const res = await fetch(`${apiBase}/api/v1/session`, { method: 'GET' });
   if (!res.ok) {
     throw new Error(`Failed to obtain a session token from server (${res.status})`);
   }
   const body = await res.json();
   const token = body.token;
   const expiresIn = body.expires_in || 1200;
-  const tokenExp = now + expiresIn;
+  const guestTokenExp = now + expiresIn;
 
-  await chrome.storage.local.set({ authToken: token, tokenExp: tokenExp });
+  await chrome.storage.local.set({ guestToken: token, guestTokenExp });
   return token;
 }
 
@@ -253,11 +251,25 @@ async function scanTab(tab) {
     const wait = response.headers.get('Retry-After') || '60';
     throw new Error(`Scan limit reached for this server. Please try again in ${wait} seconds.`);
   }
+  if (response.status === 401) {
+    await chrome.storage.local.remove([...USER_TOKEN_KEYS, ...GUEST_TOKEN_KEYS]);
+    throw authError('login_required', 'Your session expired. Please sign in again.');
+  }
   if (response.status === 403) {
-    // Free scans used up (free_scans_used) or the access code is used up / expired / revoked (access_*).
     const body = await response.json().catch(() => ({}));
-    await chrome.storage.local.remove(['authToken', 'tokenExp']);
-    throw accessError(body.error || 'No scans left. Request access below or enter an access code.');
+    const code = body.code || 'quota';
+    if (code === 'login_required') {
+      await chrome.storage.local.remove([...USER_TOKEN_KEYS, ...GUEST_TOKEN_KEYS]);
+      throw authError('login_required', body.error || 'Please sign in to scan pages.');
+    }
+    if (code === 'scans_used_up') {
+      throw authError('scans_used_up', body.error || 'No scans left. Request more scans below.');
+    }
+    if (code === 'blocked') {
+      throw authError('blocked', body.error || 'Your account has been blocked.');
+    }
+    await chrome.storage.local.remove(GUEST_TOKEN_KEYS);
+    throw authError(code, body.error || 'No scans left.');
   }
   if (!response.ok) {
     const errBody = await response.json().catch(() => ({}));
@@ -269,32 +281,28 @@ async function scanTab(tab) {
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.action === 'GET_CONFIG') {
-    Promise.all([getApiBaseUrl(), chrome.storage.local.get(['accessCode'])])
-      .then(([url, data]) => sendResponse({ apiBaseUrl: url, hasAccessCode: !!data.accessCode }));
+    Promise.all([getApiBaseUrl(), chrome.storage.local.get(['userToken', 'userTokenExp', 'userEmail'])])
+      .then(([url, data]) => {
+        const now = Math.floor(Date.now() / 1000);
+        const isLoggedIn = !!(data.userToken && (!data.userTokenExp || data.userTokenExp - now > 60));
+        sendResponse({
+          apiBaseUrl: url,
+          isLoggedIn,
+          userEmail: isLoggedIn ? (data.userEmail || '') : ''
+        });
+      });
     return true;
   }
 
-  if (message.action === 'SET_ACCESS_CODE') {
-    const code = (message.code || '').trim();
-    // Drop the cached scan token so the next scan uses (or stops using) the code.
-    chrome.storage.local.remove(['authToken', 'tokenExp'])
-      .then(() => (code ? chrome.storage.local.set({ accessCode: code }) : chrome.storage.local.remove('accessCode')))
-      .then(() => sendResponse({ success: true }));
-    return true;
-  }
-
-  if (message.action === 'REQUEST_ACCESS') {
+  if (message.action === 'SEND_AUTH_CODE') {
     (async () => {
       try {
         const apiBase = await getApiBaseUrl();
-        const res = await fetch(`${apiBase}/api/v1/access/request`, {
+        const res = await fetch(`${apiBase}/api/v1/auth/code`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ email: message.email })
+          body: JSON.stringify({ email: (message.email || '').trim() })
         });
-        if (res.status === 404) {
-          throw new Error('This server does not take access requests');
-        }
         if (!res.ok) {
           const body = await res.json().catch(() => ({}));
           throw new Error(body.error || `Server responded with status ${res.status}`);
@@ -307,10 +315,133 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
 
-  if (message.action === 'SET_CONFIG') {
-    chrome.storage.local.set({ apiBaseUrl: message.apiBaseUrl }).then(() => {
+  if (message.action === 'VERIFY_AUTH_CODE') {
+    (async () => {
+      try {
+        const apiBase = await getApiBaseUrl();
+        const email = (message.email || '').trim();
+        const code = (message.code || '').trim();
+        const res = await fetch(`${apiBase}/api/v1/auth/verify`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email, code })
+        });
+        const body = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          throw new Error(body.error || `Server responded with status ${res.status}`);
+        }
+        if (!body.token) {
+          throw new Error('Server did not return a session token');
+        }
+        const now = Math.floor(Date.now() / 1000);
+        const expiresIn = body.expires_in || (30 * 86400);
+        await chrome.storage.local.remove(GUEST_TOKEN_KEYS);
+        const resolvedEmail = body.email || email;
+        await chrome.storage.local.set({
+          userToken: body.token,
+          userTokenExp: now + expiresIn,
+          userEmail: resolvedEmail
+        });
+        sendResponse({ success: true, email: resolvedEmail, scans_left: body.scans_left });
+      } catch (err) {
+        sendResponse({ success: false, error: err.message || String(err) });
+      }
+    })();
+    return true;
+  }
+
+  if (message.action === 'GET_ME') {
+    (async () => {
+      try {
+        const apiBase = await getApiBaseUrl();
+        const data = await chrome.storage.local.get(['userToken', 'userTokenExp']);
+        const now = Math.floor(Date.now() / 1000);
+        if (!data.userToken || (data.userTokenExp && data.userTokenExp - now <= 60)) {
+          await chrome.storage.local.remove(USER_TOKEN_KEYS);
+          sendResponse({ success: false, code: 'login_required' });
+          return;
+        }
+        const res = await fetch(`${apiBase}/api/v1/auth/me`, {
+          method: 'GET',
+          headers: { 'Authorization': `Bearer ${data.userToken}` }
+        });
+        if (res.status === 401 || res.status === 403) {
+          await chrome.storage.local.remove(USER_TOKEN_KEYS);
+          sendResponse({ success: false, code: 'login_required' });
+          return;
+        }
+        const body = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          throw new Error(body.error || `Server responded with status ${res.status}`);
+        }
+        if (body.email) {
+          await chrome.storage.local.set({ userEmail: body.email });
+        }
+        sendResponse({ success: true, email: body.email || '', scans_left: body.scans_left });
+      } catch (err) {
+        sendResponse({ success: false, error: err.message || String(err) });
+      }
+    })();
+    return true;
+  }
+
+  if (message.action === 'LOGOUT') {
+    chrome.storage.local.remove([...USER_TOKEN_KEYS, ...GUEST_TOKEN_KEYS]).then(() => {
       sendResponse({ success: true });
     });
+    return true;
+  }
+
+  if (message.action === 'REQUEST_ACCESS') {
+    (async () => {
+      try {
+        const apiBase = await getApiBaseUrl();
+        const data = await chrome.storage.local.get(['userToken', 'userTokenExp']);
+        const now = Math.floor(Date.now() / 1000);
+        if (!data.userToken || (data.userTokenExp && data.userTokenExp - now <= 60)) {
+          await chrome.storage.local.remove(USER_TOKEN_KEYS);
+          sendResponse({ success: false, code: 'login_required', error: 'Please sign in first.' });
+          return;
+        }
+        const res = await fetch(`${apiBase}/api/v1/access/request`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${data.userToken}`
+          },
+          body: JSON.stringify({})
+        });
+        if (res.status === 401) {
+          await chrome.storage.local.remove(USER_TOKEN_KEYS);
+          sendResponse({ success: false, code: 'login_required', error: 'Please sign in again.' });
+          return;
+        }
+        if (res.status === 404) {
+          throw new Error('This server does not take access requests');
+        }
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({}));
+          if (res.status === 403 && body.code === 'login_required') {
+            await chrome.storage.local.remove(USER_TOKEN_KEYS);
+            sendResponse({ success: false, code: 'login_required', error: body.error || 'Please sign in again.' });
+            return;
+          }
+          throw new Error(body.error || `Server responded with status ${res.status}`);
+        }
+        sendResponse({ success: true });
+      } catch (err) {
+        sendResponse({ success: false, error: err.message || String(err) });
+      }
+    })();
+    return true;
+  }
+
+  if (message.action === 'SET_CONFIG') {
+    chrome.storage.local.remove(GUEST_TOKEN_KEYS)
+      .then(() => chrome.storage.local.set({ apiBaseUrl: message.apiBaseUrl }))
+      .then(() => {
+        sendResponse({ success: true });
+      });
     return true;
   }
 

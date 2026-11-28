@@ -12,6 +12,7 @@ CLAUDE.md
 
 # Build output
 /server
+/migrateaccess
 
 # Runtime data (leads, visits, stored scan results)
 /data/
