@@ -21,11 +21,20 @@
     </div>
     <div class="topbar-actions">
       <div id="user-session-bar" class="user-session-bar hidden" aria-live="polite">
-        <span id="user-email-label" class="user-email-label"></span>
+        <span class="user-identity-pill">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+          <span id="user-email-label" class="user-email-label"></span>
+        </span>
         <span id="user-scans-left" class="user-scans-badge"></span>
-        <button id="user-logout-btn" class="topbar-menu-btn" type="button">Log out</button>
+        <button id="user-logout-btn" class="topbar-auth-btn topbar-logout-btn" type="button">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+          <span>Log out</span>
+        </button>
       </div>
-      <button id="user-signin-btn" class="topbar-menu-btn hidden" type="button">Sign in</button>
+      <button id="user-signin-btn" class="topbar-auth-btn topbar-login-btn hidden" type="button">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" y1="12" x2="3" y2="12"/></svg>
+        <span>Sign in</span>
+      </button>
       <button id="coverage-menu-btn" class="topbar-menu-btn" type="button">WCAG Coverage</button>
       <!--
         Hidden admin trigger: click 5× rapidly to open the admin panel.
