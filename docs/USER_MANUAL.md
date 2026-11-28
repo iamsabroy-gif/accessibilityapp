@@ -10,7 +10,7 @@ For each scan you get:
 - **Developer-ready fix guidance** for each violation (before/after code snippets)
 - Optional **legal compliance reports** (ADA, Section 508/VPAT, EN 301 549, and 8 other regional standards) as PDF or HTML
 
-No account or login is required to run a scan — the tool issues a temporary guest session automatically.
+To run a scan, enter your email address in the registration prompt. No password or API key is needed.
 
 ---
 
