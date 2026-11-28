@@ -644,72 +644,20 @@ function renderLinkedPageCard(card, sub) {
 
     // Wire up renderIssuePreview logic inline (scoped to this card's elements)
     const buildInlinePreview = () => {
-      const impacted = subViols.flatMap((violation, vIdx) =>
-        (violation.nodes || [])
-          .filter(n => n.bbox && n.bbox.width > 0 && n.bbox.height > 0)
-          .map((n, nIdx) => ({ violation, violationIndex: vIdx, nodeIndex: nIdx, bbox: n.bbox }))
-      );
-
-      summaryEl.textContent = impacted.length
-        ? `${impacted.length} impacted component${impacted.length === 1 ? '' : 's'} highlighted.`
-        : 'No component positions available for this page.';
-
-      const severities = ['critical', 'serious', 'moderate', 'minor']
-        .filter(sev => impacted.some(it => (it.violation.impact || 'minor') === sev));
-      let activeSeverity = 'all';
-
-      const applyFilter = sev => {
-        activeSeverity = sev;
-        overlayEl.querySelectorAll('.issue-indicator').forEach(ind => {
-          ind.hidden = sev !== 'all' && ind.dataset.impact !== sev;
-        });
-        filtersEl.querySelectorAll('button').forEach(btn => {
-          const sel = btn.dataset.impact === activeSeverity;
-          btn.classList.toggle('active', sel);
-          btn.setAttribute('aria-pressed', String(sel));
-        });
-      };
-
-      filtersEl.replaceChildren();
-      ['all', ...severities].forEach(impact => {
-        const count = impact === 'all' ? impacted.length : impacted.filter(it => it.violation.impact === impact).length;
-        const btn = document.createElement('button');
-        btn.type = 'button';
-        btn.className = `preview-filter ${impact}`;
-        btn.dataset.impact = impact;
-        btn.textContent = `${impact === 'all' ? 'All' : impact[0].toUpperCase() + impact.slice(1)} (${count})`;
-        btn.addEventListener('click', () => applyFilter(impact));
-        filtersEl.appendChild(btn);
+      const syncIfLoaded = setupIssuePreview({
+        image: img,
+        overlay: overlayEl,
+        filters: filtersEl,
+        summary: summaryEl,
+        violations: subViols,
+        formatSummary: count => count
+          ? `${count} impacted component${count === 1 ? '' : 's'} highlighted.`
+          : 'No component positions available for this page.',
+        formatTitle: violation => `${violation.id}: ${violation.help || ''}`.trim(),
       });
 
-      const positionIndicators = () => {
-        if (!img.naturalWidth || !img.naturalHeight) return;
-        overlayEl.replaceChildren();
-        impacted.forEach(({ violation, violationIndex, bbox }) => {
-          const impact = violation.impact || 'minor';
-          const indicator = document.createElement('button');
-          indicator.type = 'button';
-          indicator.className = `issue-indicator ${impact}`;
-          indicator.dataset.impact = impact;
-          indicator.hidden = activeSeverity !== 'all' && activeSeverity !== impact;
-          indicator.style.left   = `${Math.max(0, bbox.x) / img.naturalWidth  * 100}%`;
-          indicator.style.top    = `${Math.max(0, bbox.y) / img.naturalHeight * 100}%`;
-          indicator.style.width  = `${Math.min(bbox.width,  img.naturalWidth)  / img.naturalWidth  * 100}%`;
-          indicator.style.height = `${Math.min(bbox.height, img.naturalHeight) / img.naturalHeight * 100}%`;
-          indicator.setAttribute('aria-label', `${impact} issue: ${violation.help || violation.description || violation.id}`);
-          indicator.title = `${violation.id}: ${violation.help || ''}`.trim();
-
-          const badge = document.createElement('span');
-          badge.className = 'issue-indicator-badge';
-          badge.textContent = String(violationIndex + 1);
-          indicator.appendChild(badge);
-          overlayEl.appendChild(indicator);
-        });
-      };
-
-      img.addEventListener('load', positionIndicators, { once: true });
       img.src = screenshotSrc.startsWith('data:') ? screenshotSrc : `data:image/jpeg;base64,${screenshotSrc}`;
-      applyFilter('all');
+      syncIfLoaded();
     };
 
     // Build preview lazily on first open to avoid loading all images upfront
@@ -903,26 +851,48 @@ function revealScreenshotSection(result) {
   }
 }
 
-function renderIssuePreview(image, violations) {
-  const overlay = $('issue-overlay');
-  const filters = $('preview-filters');
-  const summary = $('preview-summary');
-  if (!overlay || !filters || !summary) return;
+/**
+ * Returns true when a bounding box covers >= 90% of both natural dimensions
+ * (e.g. page-level <html> or <body> nodes that would tint the entire screenshot).
+ */
+function isFullPageBbox(bbox, naturalWidth, naturalHeight) {
+  if (!bbox || !naturalWidth || !naturalHeight || naturalWidth <= 0 || naturalHeight <= 0) {
+    return false;
+  }
+  return bbox.width >= naturalWidth * 0.9 && bbox.height >= naturalHeight * 0.9;
+}
 
-  const impacted = violations.flatMap((violation, violationIndex) =>
+/**
+ * Collects renderable violation node bounding boxes, excluding full-page boxes
+ * once image dimensions are known.
+ */
+function collectImpactedNodes(violations, naturalWidth = 0, naturalHeight = 0) {
+  return (violations || []).flatMap((violation, violationIndex) =>
     (violation.nodes || [])
-      .filter(node => node.bbox && node.bbox.width > 0 && node.bbox.height > 0)
+      .filter(node =>
+        node.bbox &&
+        node.bbox.width > 0 &&
+        node.bbox.height > 0 &&
+        !isFullPageBbox(node.bbox, naturalWidth, naturalHeight)
+      )
       .map((node, nodeIndex) => ({ violation, violationIndex, nodeIndex, bbox: node.bbox }))
   );
+}
 
-  overlay.replaceChildren();
-  filters.replaceChildren();
-  summary.textContent = impacted.length
-    ? `${impacted.length} impacted component${impacted.length === 1 ? '' : 's'} highlighted on the scanned page.`
-    : 'No impacted component positions were available for this scan.';
-
-  const severities = ['critical', 'serious', 'moderate', 'minor']
-    .filter(impact => impacted.some(item => (item.violation.impact || 'minor') === impact));
+/**
+ * Shared setup for both single-page and multi-page screenshot issue previews.
+ * Returns a callback that immediately renders indicators if the image is already loaded.
+ */
+function setupIssuePreview({
+  image,
+  overlay,
+  filters,
+  summary,
+  violations,
+  formatSummary,
+  formatTitle,
+  onIndicatorClick,
+}) {
   let activeSeverity = 'all';
 
   const applyFilter = severity => {
@@ -937,21 +907,38 @@ function renderIssuePreview(image, violations) {
     });
   };
 
-  ['all', ...severities].forEach(impact => {
-    const count = impact === 'all' ? impacted.length : impacted.filter(item => item.violation.impact === impact).length;
-    const button = document.createElement('button');
-    button.type = 'button';
-    button.className = `preview-filter ${impact}`;
-    button.dataset.impact = impact;
-    button.textContent = `${impact === 'all' ? 'All' : impact[0].toUpperCase() + impact.slice(1)} (${count})`;
-    button.addEventListener('click', () => applyFilter(impact));
-    filters.appendChild(button);
-  });
+  const renderSummaryAndFilters = items => {
+    summary.textContent = formatSummary(items.length);
+
+    const severities = ['critical', 'serious', 'moderate', 'minor']
+      .filter(impact => items.some(item => (item.violation.impact || 'minor') === impact));
+
+    if (activeSeverity !== 'all' && !severities.includes(activeSeverity)) {
+      activeSeverity = 'all';
+    }
+
+    filters.replaceChildren();
+    ['all', ...severities].forEach(impact => {
+      const count = impact === 'all'
+        ? items.length
+        : items.filter(item => (item.violation.impact || 'minor') === impact).length;
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = `preview-filter ${impact}`;
+      button.dataset.impact = impact;
+      button.textContent = `${impact === 'all' ? 'All' : impact[0].toUpperCase() + impact.slice(1)} (${count})`;
+      button.addEventListener('click', () => applyFilter(impact));
+      filters.appendChild(button);
+    });
+  };
 
   const positionIndicators = () => {
     if (!image.naturalWidth || !image.naturalHeight) return;
+    const visibleImpacted = collectImpactedNodes(violations, image.naturalWidth, image.naturalHeight);
+    renderSummaryAndFilters(visibleImpacted);
     overlay.replaceChildren();
-    impacted.forEach(({ violation, violationIndex, bbox }) => {
+
+    visibleImpacted.forEach(({ violation, violationIndex, bbox }) => {
       const indicator = document.createElement('button');
       const impact = violation.impact || 'minor';
       indicator.type = 'button';
@@ -963,19 +950,54 @@ function renderIssuePreview(image, violations) {
       indicator.style.width = `${Math.min(bbox.width, image.naturalWidth) / image.naturalWidth * 100}%`;
       indicator.style.height = `${Math.min(bbox.height, image.naturalHeight) / image.naturalHeight * 100}%`;
       indicator.setAttribute('aria-label', `${impact} issue: ${violation.help || violation.description || violation.id}`);
-      indicator.title = `${violation.id}: ${violation.help || violation.description || ''}`;
+      indicator.title = formatTitle(violation);
 
       const badge = document.createElement('span');
       badge.className = 'issue-indicator-badge';
       badge.textContent = String(violationIndex + 1);
       indicator.appendChild(badge);
-      indicator.addEventListener('click', () => focusViolation(violationIndex));
+      if (onIndicatorClick) {
+        indicator.addEventListener('click', () => onIndicatorClick(violationIndex));
+      }
       overlay.appendChild(indicator);
     });
+
+    applyFilter(activeSeverity);
   };
 
-  image.addEventListener('load', positionIndicators, { once: true });
+  overlay.replaceChildren();
+  renderSummaryAndFilters(collectImpactedNodes(violations));
   applyFilter('all');
+
+  image.addEventListener('load', positionIndicators, { once: true });
+
+  const syncIfLoaded = () => {
+    if (image.complete && image.naturalWidth > 0 && image.naturalHeight > 0) {
+      positionIndicators();
+    }
+  };
+  syncIfLoaded();
+  return syncIfLoaded;
+}
+
+function renderIssuePreview(image, violations) {
+  const overlay = $('issue-overlay');
+  const filters = $('preview-filters');
+  const summary = $('preview-summary');
+  if (!overlay || !filters || !summary) return;
+
+  setupIssuePreview({
+    image,
+    overlay,
+    filters,
+    summary,
+    violations,
+    formatSummary: count => count
+      ? `${count} impacted component${count === 1 ? '' : 's'} highlighted on the scanned page.`
+      : 'No impacted component positions were available for this scan.',
+    formatTitle: violation => `${violation.id}: ${violation.help || violation.description || ''}`,
+    onIndicatorClick: focusViolation,
+  });
 }
 
 function focusViolation(violationIndex) {
@@ -2617,5 +2639,14 @@ document.addEventListener('DOMContentLoaded', () => {
     resumeCrawlIfAny();
   }
 });
+
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = {
+    isFullPageBbox,
+    collectImpactedNodes,
+    setupIssuePreview,
+    renderIssuePreview,
+  };
+}
 
 
