@@ -1,6 +1,6 @@
 # AccessScan CLI
 
-**73 automated WCAG 2.1/2.2 checks mapped to A/AA/AAA success criteria, tuned for CI gating.**
+**73 automated WCAG 2.1/2.2 checks mapped to A/AA success criteria, tuned for CI gating.**
 
 A standalone accessibility scanner that runs entirely inside your CI runner — no hosted API, no auth, no account required. Ships a fully owned, proprietary detection engine with rules covering WCAG 2.1 and 2.2 success criteria.
 
